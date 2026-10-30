@@ -214,7 +214,8 @@ class LivePage(QWidget):
         self.c_yaw.set_series([(tx, col("yaw_rate"), YAW_COLOR, 1.8)], xr)
         allp = list(self.live)
         self.c_map.set_tracks(
-            [dict(x=[p["x"] for p in allp], y=[p["y"] for p in allp], speeds=[p["speed_kmh"] for p in allp])],
+            [dict(x=[p["x"] for p in allp], y=[p["y"] for p in allp], speeds=[p["speed_kmh"] for p in allp],
+                  fade=0.3, fade_max=300)],
             [(d["x"], d["y"], theme.TEXT)] if d else [])
         tail = win[-150:]
         self.c_gg.set_sets([dict(ga=[p["g_lat"] for p in tail], gl=[p["g_long"] for p in tail],

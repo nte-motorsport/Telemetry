@@ -17,12 +17,22 @@ def rival_color(num):
     return RIVAL_COLORS[(num - 1) % len(RIVAL_COLORS)]
 
 
+def segments(a, gap=2.0, jump=100.0):
+    """Split rows of [t, x, y, ...] where the car went unseen for a while or the server moved it, so the map
+    doesn't draw a straight line across the track there."""
+    if len(a) < 2:
+        return [a]
+    cut = np.flatnonzero((np.diff(a[:, 0]) > gap) | (np.hypot(np.diff(a[:, 1]), np.diff(a[:, 2])) > jump)) + 1
+    return [s for s in np.split(a, cut) if len(s) >= 2]
+
+
 class MultiplayerPage(QWidget):
     def __init__(self):
         super().__init__()
         self.me = deque()  # (t, x, y, speed km/h)
         self.rivals = {}   # number -> deque of (t, x, y, speed km/h or NaN)
         self.left = set()  # numbers no longer sent: their last minute stays until the next race
+        self.recording = False
         self.dirty = True
 
         h = QHBoxLayout(self)
@@ -78,7 +88,9 @@ class MultiplayerPage(QWidget):
             if not h:
                 continue
             a = np.array(h, float)
-            tracks.append(dict(x=a[:, 1], y=a[:, 2], color=color, width=3.5 if h is self.me else 2.5))
+            # the oldest end of the minute fades out, so each track reads as a tail behind its car
+            tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5,
+                            fade=0.6 if i == 0 else None) for i, s in enumerate(segments(a))]
             markers.append((a[-1, 1], a[-1, 2], color))
             series.append((a[:, 0] - now, a[:, 3], color, 2.2 if h is self.me else 1.8))
         self.c_map.set_tracks(tracks, markers)
@@ -86,8 +98,14 @@ class MultiplayerPage(QWidget):
         parts = [f"{legend_dot(color)} {name}" for name, color, h in cars if h]
         if len(cars) == 1:
             parts.append("rivals show up during an online race")
+        if self.recording:
+            parts.append(f'<span style="color:{theme.DANGER}">●</span> recording')
         for c in (self.map_card, self.speed_card):
             c.legend.setText(" &nbsp; ".join(parts))
+
+    def set_recording(self, on):
+        self.recording = on
+        self.dirty = True
 
     def tick(self):
         self.dirty = True  # the time axis moves even without new data

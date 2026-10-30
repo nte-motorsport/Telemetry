@@ -141,6 +141,17 @@ QScrollBar::handle {{ background: rgba(255, 255, 255, 40); border-radius: 5px; m
 QScrollBar::handle:hover {{ background: {ACCENT}; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ width: 0; height: 0; background: none; }}
 
+QListWidget {{ background: transparent; border: none; outline: none; font-size: {FS_MD}px; }}
+QListWidget::item {{ padding: 8px 6px; border: 2px solid transparent; border-radius: {RADIUS}px; color: {TEXT}; }}
+QListWidget::item:hover {{ background: {ACCENT_DARK}; }}
+QListWidget::item:selected {{ background: {ACCENT_DARK}; border-color: {ACCENT}; color: {TEXT}; }}
+
+QSlider::groove:horizontal {{ height: 6px; background: rgba(255, 255, 255, 40); border-radius: 3px; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
+QSlider::handle:horizontal {{ width: 16px; height: 16px; margin: -5px 0; background: {ACCENT}; border-radius: 8px; }}
+QSlider::handle:horizontal:hover {{ background: {ACCENT_HOVER}; }}
+QSlider::groove:horizontal:disabled, QSlider::sub-page:horizontal:disabled {{ background: rgba(255, 255, 255, 20); }}
+
 QMessageBox {{ background: {MENU_BG}; }}
 QMessageBox QLabel {{ font-size: {FS_MD}px; }}
 """

@@ -33,8 +33,9 @@ def decode(payload):
 
 
 class Opponents:
-    """Each racer's latest positions, under a number (1, 2, 3...) given in the order they show up. A number
-    is never given again, so someone who joins after another left doesn't carry on that one's lines."""
+    """Each racer's latest positions, under a number (1, 2, 3...) given in the order they show up. A car keeps
+    its number if it drops out for a while (the server updates far-away cars rarely) and a number is never
+    given to another car, so someone who joins after another left doesn't carry on that one's lines."""
     SPEED_SPAN = 1.0  # s of positions the speed is measured over
     TIMEOUT = 5.0     # s without an update before a car is dropped
     MAX_SPEED = 120   # m/s: a longer step is either the server moving the car (it does, by 60-80 m) or a
@@ -50,7 +51,7 @@ class Opponents:
         # start=first position, moved=has got MOVED away from it)
         self.cars = {}
         self.offset = None  # local time minus server time, at the quickest delivery seen
-        self.next_num = 1
+        self.nums = {}  # car id -> number, for as long as this object lives (one server)
 
     def fits(self, a, t, p):
         """p at server time t plausibly follows a; a chance match carries a made-up time, so the gap is
@@ -105,7 +106,7 @@ class Opponents:
             if car["good"] < self.CONFIRM or not car["moved"] or car["near"] > 0.8 * car["good"]:
                 continue  # not shown (yet): unconfirmed, never moved, or the player's own car
             if car["num"] is None:
-                car["num"], self.next_num = self.next_num, self.next_num + 1
+                car["num"] = self.nums.setdefault(cid, len(self.nums) + 1)
             while len(h) > 2 and h[-1][0] - h[1][0] >= self.SPEED_SPAN:
                 h.popleft()
             span = h[-1][0] - h[0][0]
