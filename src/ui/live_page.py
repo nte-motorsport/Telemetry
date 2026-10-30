@@ -1,16 +1,16 @@
-"""The Live page: capture status, telemetry tiles and the last minute on charts."""
+"""The Live page: telemetry tiles and the last minute on charts."""
 import time
 from collections import deque
 
 import numpy as np
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QApplication, QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import windows
 from capture.live_source import LiveSource
 from capture.raw_socket import default_ip, local_ips
 from ui import charts, theme
-from ui.widgets import Button, Tile, card, chart_grid, label, legend_dot, panel, scroll
+from ui.widgets import Button, ChartGrid, Tile, card, label, legend_dot
 
 LIVE_KEEP = 120  # seconds of live history kept in memory
 LIVE_WINDOW = 60  # seconds shown on the live charts
@@ -22,7 +22,11 @@ def signed(v):
 
 
 class LivePage(QWidget):
-    received = Signal(dict)  # every tracker sample, after the page has taken it in
+    driving = Signal(dict)   # each own sample while in a car, as the charts take it
+    rivals = Signal(object)  # the other racers, passed on from the capture
+    jumped = Signal()        # teleported: what came before is another place
+    CHARTS = [("speed", "Speed, last 60 s"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
+              ("z", "Altitude, last 60 s"), ("yaw", "Yaw rate")]
 
     def __init__(self):
         super().__init__()
@@ -32,12 +36,13 @@ class LivePage(QWidget):
         self.source_desc = ""
         self.error = None
         self.last_msg = -1e9
+        self.in_car = False
         self.dirty = True
 
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(theme.GAP)
-        v.addWidget(self.build_toolbar())
+        self.statusbar = self.build_statusbar()  # placed by the main window, below every page
 
         tiles = QWidget()
         g = QGridLayout(tiles)
@@ -60,25 +65,27 @@ class LivePage(QWidget):
         self.c_gg = charts.GGChart()
         self.c_z = charts.LineChart(xfmt)
         self.c_yaw = charts.LineChart(xfmt, sym=10)
-        grid = chart_grid([
-            card("Speed, last 60 s", self.c_speed),
-            card("G-forces", self.c_g, f"{legend_dot(theme.ACCENT)} longitudinal &nbsp; {legend_dot(LAT_COLOR)} lateral"),
-            card("Trajectory", self.c_map, "colour = speed"),
-            card("G-G diagram", self.c_gg, "↑ accel ↓ braking, ← → cornering"),
-            card("Altitude, last 60 s", self.c_z),
-            card("Yaw rate", self.c_yaw),
-        ])
-        body = QWidget()
-        bv = QVBoxLayout(body)
-        bv.setContentsMargins(0, 0, 0, 0)
-        bv.setSpacing(theme.GAP)
-        bv.addWidget(tiles)
-        bv.addWidget(grid)
-        bv.addStretch()
-        v.addWidget(scroll(body), 1)
+        t = dict(self.CHARTS)
+        self.grid = ChartGrid({
+            "speed": card(t["speed"], self.c_speed),
+            "g": card(t["g"], self.c_g, f"{legend_dot(theme.ACCENT)} longitudinal &nbsp; {legend_dot(LAT_COLOR)} lateral"),
+            "map": card(t["map"], self.c_map, "colour = speed"),
+            "gg": card(t["gg"], self.c_gg, "↑ accel ↓ braking, ← → cornering"),
+            "z": card(t["z"], self.c_z),
+            "yaw": card(t["yaw"], self.c_yaw),
+        })
+        v.addWidget(tiles)
+        v.addWidget(self.grid, 1)
 
-    def build_toolbar(self):
-        tb, h = panel(QHBoxLayout)
+    def build_statusbar(self):
+        """The bar along the bottom of the window: whether data is coming in and how fast, and the
+        capture controls: the network interface and Clear."""
+        bar = QFrame()
+        bar.setObjectName("statusBar")
+        bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(theme.GAP, 0, theme.GAP, 0)
+        h.setSpacing(theme.GAP)
         self.dot = QLabel()
         self.dot.setFixedSize(10, 10)
         h.addWidget(self.dot)
@@ -89,6 +96,9 @@ class LivePage(QWidget):
         self.admin_btn.clicked.connect(lambda: windows.relaunch_as_admin() and QApplication.quit())
         self.admin_btn.hide()
         h.addWidget(self.admin_btn)
+        self.rate = label("", "muted")
+        h.addWidget(self.rate)
+        h.addSpacing(theme.GAP)
         h.addWidget(label("Network", "muted"))
         self.iface = QComboBox()
         self.iface.setMinimumWidth(180)
@@ -98,9 +108,10 @@ class LivePage(QWidget):
         self.iface.activated.connect(lambda _: self.start())
         h.addWidget(self.iface)
         clr = Button("Clear", "eraser")
+        clr.setToolTip("Clear the live charts")
         clr.clicked.connect(self.clear)
         h.addWidget(clr)
-        return tb
+        return bar
 
     # ----- capture -----
 
@@ -111,6 +122,7 @@ class LivePage(QWidget):
         self.admin_btn.hide()
         self.source, self.source_desc = LiveSource(ip), ip
         self.source.sample.connect(self.on_sample)
+        self.source.rivals.connect(self.rivals)
         self.source.failed.connect(self.on_failed)
         self.source.start()
         self.tick()
@@ -118,6 +130,7 @@ class LivePage(QWidget):
     def stop(self):
         if self.source:
             self.source.sample.disconnect()
+            self.source.rivals.disconnect()
             self.source.stop()
             self.source = None
 
@@ -127,14 +140,24 @@ class LivePage(QWidget):
         self.tick()
 
     def on_sample(self, d, wall=None):
-        d["w"] = time.monotonic() if wall is None else wall
         self.last_msg = time.monotonic()
+        if d.get("jump"):  # teleported (e.g. into a test drive): start over, so two places aren't joined
+            self.clear()
+            self.jumped.emit()
+        self.in_car = d.get("in_car", True)
+        if not self.in_car:  # running and jumping are not telemetry: keep them off the charts
+            return
+        d["w"] = time.monotonic() if wall is None else wall
         self.live.append(d)
         while self.live and d["w"] - self.live[0]["w"] > LIVE_KEEP:
             self.live.popleft()
         self.live_max = max(self.live_max, d["speed_kmh"])
         self.dirty = True
-        self.received.emit(d)
+        self.driving.emit(d)
+
+    def set_charts(self, keys):
+        self.grid.set_order(keys)
+        self.dirty = True
 
     def clear(self):
         self.live.clear()
@@ -143,15 +166,20 @@ class LivePage(QWidget):
 
     def tick(self):
         ok = time.monotonic() - self.last_msg < 3
-        color = "#3ad164" if ok else theme.DANGER
+        color = (theme.ACCENT if not self.in_car else "#3ad164") if ok else theme.DANGER
         self.dot.setStyleSheet(f"background:{color}; border-radius:5px;")
-        if ok:
-            text = f"Receiving data ({self.source_desc})"
+        if ok and not self.in_car:
+            text = f"On foot: paused until you get in a car ({self.source_desc})"
+        elif ok:
+            text = f"In a car, receiving data ({self.source_desc})"
         elif self.error:
             text = self.error
         else:
             text = f"No data: not in a car or no game traffic ({self.source_desc})"
         self.status.setText(text)
+        now = time.monotonic()
+        n = sum(1 for p in reversed(self.live) if now - p["w"] <= 1) if ok and self.in_car else 0
+        self.rate.setText(f"{n} samples/s" if ok and self.in_car else "")
         self.dirty = True  # the charts' time axis moves even without new data
 
     # ----- rendering -----

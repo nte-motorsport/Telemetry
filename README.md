@@ -1,5 +1,6 @@
 # Telemetry
-NTE Motorsport telemetry app for Neverness to Everness: speed, G-forces, trajectory, altitude and run comparison.
+
+NTE Motorsport telemetry app for Neverness to Everness: speed, G-forces, trajectory and altitude.
 
 The data is decoded from the game's own UDP traffic, read passively from the network. The game process is never
 touched, so the Anti-Cheat Expert driver has nothing to see. No Wireshark or Npcap is needed: the app uses a Windows
