@@ -41,7 +41,7 @@ class MultiplayerPage(QWidget):
         self.c_map = charts.MapChart()
         self.c_speed = charts.LineChart(lambda s: f"{s:.0f} s", zero=True)
         self.map_card = card("Map", self.c_map, " ")
-        self.speed_card = card("Speed, last 60 s", self.c_speed, " ")
+        self.speed_card = card("Speed", self.c_speed, " ")
         h.addWidget(self.map_card, 1)
         h.addWidget(self.speed_card, 1)
 
@@ -96,8 +96,6 @@ class MultiplayerPage(QWidget):
         self.c_map.set_tracks(tracks, markers)
         self.c_speed.set_series(series, (-WINDOW, 0))
         parts = [f"{legend_dot(color)} {name}" for name, color, h in cars if h]
-        if len(cars) == 1:
-            parts.append("rivals show up during an online race")
         if self.recording:
             parts.append(f'<span style="color:{theme.DANGER}">●</span> recording')
         for c in (self.map_card, self.speed_card):

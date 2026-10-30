@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import functions as fn
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsItem
 
@@ -12,7 +12,7 @@ from ui import theme
 
 pg.setConfigOptions(antialias=True, background=None, foreground=theme.MUTED)
 
-NO_DATA = "no data"
+NO_DATA = "NO DATA"
 MIN_HEIGHT = 110  # charts stretch to fill the window, but not below this
 MAP_POINTS = 1200  # most points per track on the map; a long run is thinned to this
 GG_POINTS = 2000   # most dots per run on the G-G diagram
@@ -113,14 +113,52 @@ class Axis(pg.AxisItem):
         # the axis also draws the grid, which is slow; keep it as an image until the range changes
         self.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
 
+    def generateDrawSpecs(self, p):
+        specs = super().generateDrawSpecs(p)
+        if specs is None:
+            return None
+        (_, p1, p2), *rest = specs
+        # no line of its own: the chart's frame draws all four sides alike (the axis' line runs a pixel past
+        # the plot area and doubles up with the frame)
+        return ((QPen(Qt.NoPen), p1, p2), *rest)
+
     def tickStrings(self, values, scale, spacing):
         if self.fmt:
             return [self.fmt(v) for v in values]
         return super().tickStrings(values, scale, spacing)
 
 
+class ScaleAxis(Axis):
+    """Under a map, in place of an x axis: a scale bar and its length, in the axis' font and colour."""
+
+    def __init__(self):
+        super().__init__("bottom")
+        self.setHeight(24)  # as tall as the line charts' time axis
+        self.active = False
+
+    def paint(self, p, *args):
+        vb = self.linkedView()
+        if not self.active or vb is None:
+            return
+        (x0, x1), _ = vb.viewRange()
+        w = self.geometry().width()
+        if x1 <= x0 or w <= 0:
+            return
+        size = nice_step((x1 - x0) * 0.8, 4)
+        length = size / (x1 - x0) * w
+        r = self.boundingRect()
+        y = r.top() + 12
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setPen(pg.mkPen(theme.MUTED, width=1))
+        p.drawLine(QPointF(0, y), QPointF(length, y))
+        for x in (0, length):  # end ticks, as on a ruler
+            p.drawLine(QPointF(x, y - 4), QPointF(x, y + 4))
+        p.setFont(self.style["tickFont"])
+        p.drawText(QRectF(length + 8, r.top(), 200, r.height()), Qt.AlignLeft | Qt.AlignVCenter, dist_fmt(size))
+
+
 class BaseChart(pg.PlotWidget):
-    def __init__(self, axes=True, xfmt=None, **kw):
+    def __init__(self, axes=True, xfmt=None, frame=True, **kw):
         items = {"bottom": Axis("bottom", xfmt), "left": Axis("left")} if axes else {}
         super().__init__(axisItems=items, **kw)
         self.setBackground(None)
@@ -135,16 +173,30 @@ class BaseChart(pg.PlotWidget):
         else:
             pi.hideAxis("left")
             pi.hideAxis("bottom")
+        self.axes_below()
+        if frame:  # all four sides of the plot area, the same as the axes' lines along two of them
+            pi.vb.setBorder(pg.mkPen(theme.GRID, width=1))
         self.empty = pg.TextItem(NO_DATA, color=theme.MUTED, anchor=(0.5, 0.5))
-        self.empty.setFont(theme.font(12))
+        self.empty.setFont(theme.font(25))
+        self.empty.setOpacity(0.2)
         self.addItem(self.empty, ignoreBounds=True)
+        pi.vb.sigRangeChanged.connect(lambda *_: self.center_empty())
+
+    def axes_below(self):
+        """The axes draw the grid, and pyqtgraph puts them above the plot area; below it the grid lies under
+        the lines. Their tick labels are outside the plot area, so nothing covers them."""
+        for name in ("left", "bottom", "right", "top"):
+            self.getPlotItem().getAxis(name).setZValue(-200)
 
     def wheelEvent(self, ev):  # let the page scroll instead of zooming
         ev.ignore()
 
     def show_empty(self, on):
         self.empty.setVisible(bool(on))
-        if on:
+        self.center_empty()
+
+    def center_empty(self):
+        if self.empty.isVisible():
             (x0, x1), (y0, y1) = self.viewRange()
             self.empty.setPos((x0 + x1) / 2, (y0 + y1) / 2)
 
@@ -219,19 +271,15 @@ class MapChart(BaseChart):
         super().__init__(axes=False)
         self.setMinimumHeight(MIN_HEIGHT)
         self.setAspectLocked(True)
+        pi = self.getPlotItem()
+        self.scale = ScaleAxis()
+        pi.setAxisItems({"bottom": self.scale})
+        pi.showAxis("bottom")
+        self.axes_below()
         self.layers = []
         self.markers = pg.ScatterPlotItem(size=12, pen=pg.mkPen(theme.BG, width=2))
-        self.bar = pg.PlotDataItem(pen=pg.mkPen(theme.MUTED, width=2))
-        self.bar_text = pg.TextItem(color=theme.MUTED, anchor=(0, 1))
-        self.bar_text.setFont(theme.font(11))
-        for it in (self.markers, self.bar):
-            self.addItem(it)
+        self.addItem(self.markers)
         self.markers.setZValue(10)  # above the tracks, which are added later
-        self.addItem(self.bar_text, ignoreBounds=True)
-        self.bar_size = None
-        # the aspect lock reshapes the view after set_tracks, e.g. in a tall narrow card, so the scale bar is
-        # placed again whenever the view changes, or it can end up off the edge
-        self.getPlotItem().vb.sigRangeChanged.connect(lambda *_: self.place_bar())
 
     def _layer(self, i):
         while len(self.layers) <= i:
@@ -294,10 +342,9 @@ class MapChart(BaseChart):
         for it in self.layers[used:]:
             it.setData([], [])
         self.set_markers(markers)
+        self.scale.active = bool(allx)
+        self.scale.update()
         if not allx:
-            self.bar_size = None
-            self.bar.setData([], [])
-            self.bar_text.setText("")
             self.setRange(xRange=(-1, 1), yRange=(-1, 1), padding=0)
             self.show_empty(True)
             return
@@ -307,17 +354,6 @@ class MapChart(BaseChart):
         cx, cy = (Y.max() + Y.min()) / 2, (X.max() + X.min()) / 2
         h = span / 2 * 1.08
         self.setRange(xRange=(cx - h, cx + h), yRange=(cy - h, cy + h), padding=0)
-        self.bar_size = nice_step(span, 4)
-        self.bar_text.setText(dist_fmt(self.bar_size))
-        self.place_bar()
-
-    def place_bar(self):
-        if not self.bar_size:
-            return
-        (x0, x1), (y0, y1) = self.viewRange()
-        bx, by = x0 + (x1 - x0) * 0.03, y0 + (y1 - y0) * 0.04
-        self.bar.setData([bx, bx + self.bar_size], [by, by])
-        self.bar_text.setPos(bx, by + (y1 - y0) * 0.01)
 
     def set_markers(self, markers):
         """markers: [(x, y, color)], e.g. where each run is at the hover point."""
@@ -330,7 +366,7 @@ class GGChart(BaseChart):
     turn (left in a right-hand turn), i.e. the force the driver feels."""
 
     def __init__(self):
-        super().__init__(axes=False)
+        super().__init__(axes=False, frame=False)
         self.setMinimumHeight(MIN_HEIGHT)
         self.setAspectLocked(True)
         self.deco = []
@@ -364,14 +400,15 @@ class GGChart(BaseChart):
             ln = pg.PlotDataItem(xs, ys, pen=pg.mkPen(theme.GRID, width=1))
             self.addItem(ln)
             self.deco.append(ln)
-        for text, pos, anchor in (("accel", (0, mx), (0.5, 1)), ("braking", (0, -mx), (0.5, 0)),
-                                  ("left", (-mx, 0), (0, 1)), ("right", (mx, 0), (1, 1))):
+        gap = mx * 0.04  # between the ring and its labels
+        for text, pos, anchor in (("accel", (0, mx + gap), (0.5, 1)), ("braking", (0, -mx - gap), (0.5, 0)),
+                                  ("left", (-mx - gap, 0), (1, 0.5)), ("right", (mx + gap, 0), (0, 0.5))):
             t = pg.TextItem(text, color=theme.MUTED, anchor=anchor)
             t.setFont(theme.font(11))
             t.setPos(*pos)
             self.addItem(t)
             self.deco.append(t)
-        m = mx * 1.25  # room for the accel / braking / left / right labels
+        m = mx * 1.25  # room for the accel / braking labels; the view is wider than tall, so left and right fit
         self.setRange(xRange=(-m, m), yRange=(-m, m), padding=0)
 
     def set_sets(self, sets):
@@ -405,4 +442,4 @@ class GGChart(BaseChart):
                 c.setAlphaF(0.55)
                 sc.setData(-ga, gl, brush=brush(c), size=4)
         self.show_empty(not any(len(s["ga"]) for s in sets))
-        self.empty.setPos(0, self.mx * 0.35)
+        self.empty.setPos(0, 0)

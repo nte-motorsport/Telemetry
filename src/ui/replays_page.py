@@ -24,7 +24,7 @@ class ReplaysPage(QWidget):
         super().__init__()
         self.store = store
         self.cars = []  # (name, colour, array of [t, x, y, z, km/h]) of the open replay
-        self.opened = None  # its file
+        self.opened = False  # its file; None once drawn with no replay open, False before anything is drawn
         self.duration = 0.0
         self.pos = 0.0
         self.dirty = True
@@ -141,8 +141,9 @@ class ReplaysPage(QWidget):
         self.c_map.set_tracks([dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2,
                                     fade=0.3 if i == 0 else None, fade_max=300)
                                for n, c, a in self.cars for i, s in enumerate(segments(a))])
+        # nothing open: a minute, so the axis doesn't read 0:00 four times
         self.c_speed.set_series([(a[:, 0], a[:, 4], c, 2.0 if n == "You" else 1.6) for n, c, a in self.cars],
-                                (0, max(self.duration, 1.0)))
+                                (0, self.duration if self.cars and self.duration > 0 else 60.0))
         legend = " &nbsp; ".join(f"{legend_dot(c)} {n}" for n, c, _ in self.cars)
         for c in (self.map_card, self.speed_card):
             c.legend.setText(legend)
