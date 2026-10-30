@@ -29,9 +29,6 @@ FS_BRAND = 29
 FS_LG = 16
 FS_MD = 12
 
-# Series colours: the accent first, then the other NTE Motorsport project colours.
-COLORS = [ACCENT, "#3d8eff", DANGER, "#3ad164", "#b388ff", "#ff8c42", "#4cc9f0", "#f72585"]
-
 
 def asset(*parts):
     return os.path.join(ASSETS, *parts).replace("\\", "/")
@@ -78,7 +75,7 @@ STYLE = f"""
 * {{ color: {TEXT}; }}
 QToolTip {{ color: {TEXT}; background: {MENU_BG}; border: 2px solid {ACCENT}; border-radius: {RADIUS}px; padding: 6px; }}
 
-#navbar {{ background: {BG}; }}
+#navbar, #statusBar {{ background: {BG}; }}
 #siteTitle {{ font-size: {FS_BRAND}px; }}
 #eyebrow {{ color: {ACCENT}; font-size: {FS_MD}px; }}
 #pageTitle {{ font-size: {FS_TITLE}px; }}

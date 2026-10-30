@@ -1,26 +1,25 @@
-"""The main window: the site-style navbar, the Live / Compare pages and run recording."""
+"""The main window: the site-style navbar and the Live / Multiplayer / Settings pages."""
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QStackedWidget, QVBoxLayout
 
-from runs.model import Recorder
-from runs.store import RunStore
 from ui import theme
-from ui.compare_page import ComparePage
+from ui.chart_layout import ChartLayout
 from ui.live_page import LivePage
+from ui.multiplayer_page import MultiplayerPage
+from ui.settings_page import SettingsPage
 from ui.widgets import Backdrop, Button
 
-LIVE, COMPARE = 0, 1
+LIVE, MULTIPLAYER, SETTINGS = 0, 1, 2
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, store=None, autostart=True):
+    def __init__(self, autostart=True, prefs=None):
         super().__init__()
         self.setWindowTitle("NTE Telemetry")
         self.setWindowIcon(QIcon(theme.asset("app.ico")))
         self.resize(1440, 920)
         self.setMinimumSize(1100, 700)
-        self.recorder = None
 
         root = Backdrop()
         self.setCentralWidget(root)
@@ -30,17 +29,22 @@ class MainWindow(QMainWindow):
         v.addWidget(self.build_navbar())
 
         self.live = LivePage()
-        self.live.received.connect(self.on_sample)
-        self.compare = ComparePage(store or RunStore(theme.COLORS))
-        self.compare.runs_changed.connect(self.on_runs_changed)
-        self.on_runs_changed(len(self.compare.store.runs))
+        self.multiplayer = MultiplayerPage()
+        self.live.driving.connect(self.multiplayer.on_own)
+        self.live.rivals.connect(self.multiplayer.on_rivals)
+        self.live.jumped.connect(self.multiplayer.clear)
+        self.prefs = prefs or ChartLayout({"live": [k for k, _ in LivePage.CHARTS]})
+        self.live.set_charts(self.prefs.shown("live"))
+        self.prefs.changed.connect(lambda key: self.live.set_charts(self.prefs.shown(key)))
+        self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)])
         self.pages = QStackedWidget()
-        self.pages.addWidget(self.live)
-        self.pages.addWidget(self.compare)
+        for p in (self.live, self.multiplayer, self.settings):
+            self.pages.addWidget(p)
         content = QVBoxLayout()
-        content.setContentsMargins(theme.GAP, 0, theme.GAP, theme.GAP)
+        content.setContentsMargins(theme.GAP, 0, theme.GAP, 0)
         content.addWidget(self.pages)
         v.addLayout(content, 1)
+        v.addWidget(self.live.statusbar)
         self.switch(LIVE)
 
         t = QTimer(self)
@@ -48,6 +52,7 @@ class MainWindow(QMainWindow):
         t.start(33)
         t2 = QTimer(self)
         t2.timeout.connect(self.live.tick)
+        t2.timeout.connect(self.multiplayer.tick)
         t2.start(250)
 
         if autostart:
@@ -81,50 +86,21 @@ class MainWindow(QMainWindow):
         h.addStretch()
 
         self.tab_live = Button("Live", "chart-line", checkable=True)
-        self.tab_cmp = Button("Compare", "arrows-diff", checkable=True)
+        self.tab_mp = Button("Multiplayer", "users", checkable=True)
+        self.tab_set = Button("Settings", "settings", checkable=True)
+        self.tabs = (self.tab_live, self.tab_mp, self.tab_set)
         group = QButtonGroup(self)
         group.setExclusive(True)
-        for i, b in enumerate((self.tab_live, self.tab_cmp)):
+        for i, b in enumerate(self.tabs):
             group.addButton(b, i)
             h.addWidget(b)
         group.idClicked.connect(self.switch)
-
-        self.rec_btn = Button("Record run", "player-record")
-        self.rec_btn.clicked.connect(self.toggle_record)
-        h.addWidget(self.rec_btn)
-        imp = Button("Import CSV", "file-import")
-        imp.clicked.connect(lambda: self.compare.import_csv() and self.switch(COMPARE))
-        h.addWidget(imp)
         return bar
 
     def switch(self, i):
         self.pages.setCurrentIndex(i)
-        (self.tab_live if i == LIVE else self.tab_cmp).setChecked(True)
+        self.tabs[i].setChecked(True)
         self.pages.currentWidget().dirty = True
-
-    def on_runs_changed(self, n):
-        self.tab_cmp.setText(f"Compare ({n})" if n else "Compare")
-
-    # ----- recording -----
-
-    def on_sample(self, d):
-        if self.recorder:
-            self.recorder.add(d)
-            self.rec_btn.setText(f"Stop · {self.recorder.time:.1f} s · {self.recorder.dist / 1000:.2f} km")
-
-    def toggle_record(self):
-        if self.recorder is None:
-            self.recorder = Recorder()
-            self.rec_btn.set_flag("danger", True)
-            self.rec_btn.set_icon("player-stop")
-            self.rec_btn.setText("Stop")
-        else:
-            if len(self.recorder.pts) > 5:
-                self.compare.add_run(f"Run {len(self.compare.store.runs) + 1}", self.recorder.pts)
-            self.recorder = None
-            self.rec_btn.set_flag("danger", False)
-            self.rec_btn.set_icon("player-record")
-            self.rec_btn.setText("Record run")
 
     def closeEvent(self, ev):
         self.live.stop()

@@ -1,7 +1,9 @@
 """Small building blocks in the NTE Motorsport site style: panels, buttons, tiles, chart cards, the backdrop."""
+import math
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ui import theme
 
@@ -87,8 +89,9 @@ def card(title, chart, legend=""):
     head = QHBoxLayout()
     head.setSpacing(theme.GAP)
     head.addWidget(label(title, "sectionTitle"))
+    f.legend = None  # the legend label, for pages that change it
     if legend:
-        lg = label(legend, "muted")
+        f.legend = lg = label(legend, "muted")
         lg.setTextFormat(Qt.RichText)
         head.addWidget(lg)
     head.addStretch()
@@ -97,16 +100,37 @@ def card(title, chart, legend=""):
     return f
 
 
-def chart_grid(cards):
-    w = QWidget()
-    g = QGridLayout(w)
-    g.setContentsMargins(0, 0, 0, 0)
-    g.setSpacing(theme.GAP)
-    for i, c in enumerate(cards):
-        g.addWidget(c, i // 2, i % 2)
-    g.setColumnStretch(0, 1)
-    g.setColumnStretch(1, 1)
-    return w
+class ChartGrid(QWidget):
+    """Chart cards sharing the room left on the page; set_order() shows the given keys in that order,
+    left to right, top to bottom, and hides the rest. Up to 3 charts sit in one row, up to 8 in two,
+    more in three; every cell gets the same size."""
+
+    def __init__(self, cards):
+        super().__init__()
+        self.cards = cards  # {key: card}
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(theme.GAP)
+        for c in cards.values():
+            c.setParent(self)
+            # sized by the grid alone, not by what is inside, so all cells come out equal
+            c.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+            c.setMinimumSize(220, 150)
+            c.hide()
+
+    def set_order(self, keys):
+        for c in self.cards.values():
+            self.grid.removeWidget(c)
+            c.hide()
+        n = len(keys)
+        rows = 0 if not n else 1 if n <= 3 else 2 if n <= 8 else 3
+        cols = math.ceil(n / rows) if n else 0
+        for i in range(len(self.cards)):
+            self.grid.setRowStretch(i, 1 if i < rows else 0)
+            self.grid.setColumnStretch(i, 1 if i < cols else 0)
+        for i, k in enumerate(keys):
+            self.grid.addWidget(self.cards[k], i // cols, i % cols)
+            self.cards[k].show()
 
 
 def scroll(widget):
