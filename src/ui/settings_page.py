@@ -1,6 +1,8 @@
-"""The Settings page: race recording, and which charts the Live page shows in what order."""
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
+"""The Settings page: the network to capture on, race recording, and which charts the Live page shows in
+what order."""
+from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QVBoxLayout, QWidget
 
+from capture.raw_socket import local_ips
 from ui import theme
 from ui.widgets import Button, label, panel, scroll
 
@@ -18,6 +20,26 @@ class SettingsPage(QWidget):
         v = QVBoxLayout(body)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(theme.GAP)
+        cap, cl = panel()
+        cl.addWidget(label("Capture", "sectionTitle"))
+        row = QHBoxLayout()
+        row.setSpacing(theme.GAP)
+        row.addWidget(label("Network", "muted"))
+        self.network = QComboBox()
+        self.network.setMinimumWidth(220)
+        ips = local_ips()  # the default-route one first
+        saved = prefs.option("network")
+        for ip in ips + ([saved] if saved and saved not in ips else []):
+            self.network.addItem(ip if ip in ips else f"{ip} (not connected)", ip)
+        self.network.setCurrentIndex(max(self.network.findData(saved), 0) if saved else 0)
+        self.network.activated.connect(lambda _: self.prefs.set_option("network", self.network.currentData()))
+        row.addWidget(self.network)
+        row.addStretch()
+        cl.addLayout(row)
+        cl.addWidget(label("The network interface that carries the game's traffic. The one with the internet "
+                           "connection is first, and it is the right one unless a VPN or a second network card "
+                           "is in use.", "muted", wrap=True))
+        v.addWidget(cap)
         rec, rl = panel()
         rl.addWidget(label("Recording", "sectionTitle"))
         self.auto_record = QCheckBox("Record online races automatically")

@@ -4,7 +4,7 @@ from collections import deque
 
 import numpy as np
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import windows
 from capture.live_source import LiveSource
@@ -25,8 +25,8 @@ class LivePage(QWidget):
     driving = Signal(dict)   # each own sample while in a car, as the charts take it
     rivals = Signal(object)  # the other racers, passed on from the capture
     jumped = Signal()        # teleported: what came before is another place
-    CHARTS = [("speed", "Speed, last 60 s"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
-              ("z", "Altitude, last 60 s"), ("yaw", "Yaw rate")]
+    CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
+              ("z", "Altitude"), ("yaw", "Yaw rate")]
 
     def __init__(self):
         super().__init__()
@@ -34,6 +34,7 @@ class LivePage(QWidget):
         self.live_max = 0.0
         self.source = None
         self.source_desc = ""
+        self.ip = ""  # the network chosen in Settings
         self.error = None
         self.last_msg = -1e9
         self.in_car = False
@@ -69,8 +70,8 @@ class LivePage(QWidget):
         self.grid = ChartGrid({
             "speed": card(t["speed"], self.c_speed),
             "g": card(t["g"], self.c_g, f"{legend_dot(theme.ACCENT)} longitudinal &nbsp; {legend_dot(LAT_COLOR)} lateral"),
-            "map": card(t["map"], self.c_map, "colour = speed"),
-            "gg": card(t["gg"], self.c_gg, "↑ accel ↓ braking, ← → cornering"),
+            "map": card(t["map"], self.c_map),
+            "gg": card(t["gg"], self.c_gg),
             "z": card(t["z"], self.c_z),
             "yaw": card(t["yaw"], self.c_yaw),
         })
@@ -79,7 +80,7 @@ class LivePage(QWidget):
 
     def build_statusbar(self):
         """The bar along the bottom of the window: whether data is coming in and how fast, and the
-        capture controls: the network interface and Clear."""
+        Clear."""
         bar = QFrame()
         bar.setObjectName("statusBar")
         bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
@@ -98,15 +99,6 @@ class LivePage(QWidget):
         h.addWidget(self.admin_btn)
         self.rate = label("", "muted")
         h.addWidget(self.rate)
-        h.addSpacing(theme.GAP)
-        h.addWidget(label("Network", "muted"))
-        self.iface = QComboBox()
-        self.iface.setMinimumWidth(180)
-        for ip in local_ips():
-            self.iface.addItem(ip, ip)
-        self.iface.setToolTip("Network interface that carries the game's traffic")
-        self.iface.activated.connect(lambda _: self.start())
-        h.addWidget(self.iface)
         clr = Button("Clear", "eraser")
         clr.setToolTip("Clear the live charts")
         clr.clicked.connect(self.clear)
@@ -115,8 +107,12 @@ class LivePage(QWidget):
 
     # ----- capture -----
 
-    def start(self):
-        ip = self.iface.currentData() or default_ip()
+    def start(self, ip=None):
+        """Capture on ip (a local address), or on the one chosen before; one that no longer exists, or none
+        chosen, means the interface that holds the default route."""
+        if ip is not None:
+            self.ip = ip
+        ip = self.ip if self.ip in local_ips() else default_ip()
         self.stop()
         self.error = None
         self.admin_btn.hide()

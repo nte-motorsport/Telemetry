@@ -5,7 +5,7 @@ import os
 
 from PySide6.QtCore import QObject, Signal
 
-OPTIONS = {"auto_record": True}  # option -> default
+OPTIONS = {"auto_record": True, "network": ""}  # option -> default; network "" = the default-route one
 
 
 def data_dir():
@@ -30,7 +30,7 @@ class Prefs(QObject):
         data = data if isinstance(data, dict) else {}
         saved = data.get("charts") if isinstance(data.get("charts"), dict) else {}
         opts = data.get("options") if isinstance(data.get("options"), dict) else {}
-        self.options = {k: opts[k] if isinstance(opts.get(k), bool) else v for k, v in OPTIONS.items()}
+        self.options = {k: opts[k] if isinstance(opts.get(k), type(v)) else v for k, v in OPTIONS.items()}
         self.pages = {}
         for page, keys in defaults.items():
             rows = []

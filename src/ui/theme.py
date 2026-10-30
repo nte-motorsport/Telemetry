@@ -20,6 +20,9 @@ MENU_BG = "#0a0b0d"
 TEXT = "#ffffff"
 MUTED = "#999999"
 GRID = "#2e2e2e"
+DISABLED_TEXT = "#808080"    # white, the accent and the danger red at half strength on the black of a button
+DISABLED_ACCENT = "#7e6827"
+DISABLED_DANGER = "#7e2927"
 RADIUS = 10
 GAP = 10
 CONTROL_HEIGHT = 38
@@ -91,11 +94,12 @@ QPushButton {{
     font-size: {FS_MD}px; background: #000; border: 2px solid {ACCENT}; border-radius: {RADIUS}px;
 }}
 QPushButton:hover {{ background: {ACCENT_DARK}; }}
-QPushButton:disabled {{ color: rgba(255, 255, 255, 128); border-color: rgba(251, 207, 77, 128); }}
 QPushButton:checked, QPushButton[primary="true"] {{ color: #000; background: {ACCENT}; border-color: #000; }}
 QPushButton:checked:hover, QPushButton[primary="true"]:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton[danger="true"] {{ border-color: {DANGER}; }}
 QPushButton[danger="true"]:hover {{ background: {DANGER_DARK}; }}
+QPushButton:disabled {{ color: {DISABLED_TEXT}; border-color: {DISABLED_ACCENT}; }}
+QPushButton[danger="true"]:disabled {{ border-color: {DISABLED_DANGER}; }}
 QPushButton[iconOnly="true"] {{ min-width: {CONTROL_HEIGHT - 4}px; max-width: {CONTROL_HEIGHT - 4}px; padding: 0; }}
 
 QComboBox {{

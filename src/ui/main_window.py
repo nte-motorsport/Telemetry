@@ -1,6 +1,6 @@
 """The main window: the site-style navbar, the Live / Multiplayer / Replays / Settings pages and race recording."""
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QStackedWidget, QVBoxLayout
 
 from replays.recorder import RaceRecorder
@@ -69,6 +69,13 @@ class MainWindow(QMainWindow):
         t2.timeout.connect(self.recorder.tick)
         t2.start(250)
 
+        # full screen: F11 or Alt+Enter toggle it, Esc leaves it
+        for keys in ("F11", "Alt+Return", "Alt+Enter"):
+            QShortcut(QKeySequence(keys), self, self.toggle_full_screen)
+        QShortcut(QKeySequence("Esc"), self, lambda: self.isFullScreen() and self.toggle_full_screen())
+        self.was_maximized = False
+
+        self.live.ip = self.prefs.option("network")
         if autostart:
             self.live.start()
 
@@ -117,9 +124,18 @@ class MainWindow(QMainWindow):
         self.tabs[i].setChecked(True)
         self.pages.currentWidget().dirty = True
 
+    def toggle_full_screen(self):
+        if self.isFullScreen():
+            self.showMaximized() if self.was_maximized else self.showNormal()
+        else:
+            self.was_maximized = self.isMaximized()  # come back to the same state
+            self.showFullScreen()
+
     def on_prefs(self, key):
         if key == "options":
             self.recorder.set_enabled(self.prefs.option("auto_record"))
+            if self.prefs.option("network") != self.live.ip:
+                self.live.start(self.prefs.option("network"))
         else:
             self.live.set_charts(self.prefs.shown(key))
 
