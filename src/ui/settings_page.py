@@ -1,4 +1,4 @@
-"""The Settings page: turn each page's charts on and off and change their order."""
+"""The Settings page: race recording, and which charts the Live page shows in what order."""
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
 
 from ui import theme
@@ -18,6 +18,15 @@ class SettingsPage(QWidget):
         v = QVBoxLayout(body)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(theme.GAP)
+        rec, rl = panel()
+        rl.addWidget(label("Recording", "sectionTitle"))
+        self.auto_record = QCheckBox("Record online races automatically")
+        self.auto_record.setChecked(prefs.option("auto_record"))
+        self.auto_record.toggled.connect(lambda on: self.prefs.set_option("auto_record", on))
+        rl.addWidget(self.auto_record)
+        rl.addWidget(label("A race is recorded from when the other racers' data starts coming in until it stops, "
+                           "and can then be watched on the Replays page.", "muted", wrap=True))
+        v.addWidget(rec)
         hint, hl = panel()
         hl.addWidget(label("Choose which charts the Live page shows and in what order. They fill the "
                            "window left to right, top to bottom: up to 3 in a row, up to 8 in two rows.", "muted",
@@ -52,6 +61,8 @@ class SettingsPage(QWidget):
         prefs.changed.connect(self.fill)
 
     def fill(self, page):
+        if page not in self.lists:  # an option, not a page's charts
+            return
         lay = self.lists[page]
         while lay.count():
             lay.takeAt(0).widget().deleteLater()

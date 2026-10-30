@@ -1,20 +1,23 @@
-"""The main window: the site-style navbar and the Live / Multiplayer / Settings pages."""
+"""The main window: the site-style navbar, the Live / Multiplayer / Replays / Settings pages and race recording."""
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QStackedWidget, QVBoxLayout
 
+from replays.recorder import RaceRecorder
+from replays.store import ReplayStore
 from ui import theme
-from ui.chart_layout import ChartLayout
 from ui.live_page import LivePage
 from ui.multiplayer_page import MultiplayerPage
+from ui.prefs import Prefs
+from ui.replays_page import ReplaysPage
 from ui.settings_page import SettingsPage
 from ui.widgets import Backdrop, Button
 
-LIVE, MULTIPLAYER, SETTINGS = 0, 1, 2
+LIVE, MULTIPLAYER, REPLAYS, SETTINGS = 0, 1, 2, 3
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, autostart=True, prefs=None):
+    def __init__(self, autostart=True, prefs=None, replays=None):
         super().__init__()
         self.setWindowTitle("NTE Telemetry")
         self.setWindowIcon(QIcon(theme.asset("app.ico")))
@@ -33,12 +36,22 @@ class MainWindow(QMainWindow):
         self.live.driving.connect(self.multiplayer.on_own)
         self.live.rivals.connect(self.multiplayer.on_rivals)
         self.live.jumped.connect(self.multiplayer.clear)
-        self.prefs = prefs or ChartLayout({"live": [k for k, _ in LivePage.CHARTS]})
+        self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
-        self.prefs.changed.connect(lambda key: self.live.set_charts(self.prefs.shown(key)))
+        self.prefs.changed.connect(self.on_prefs)
+
+        store = replays or ReplayStore()
+        self.recorder = RaceRecorder(store, self.prefs.option("auto_record"))
+        self.live.driving.connect(self.recorder.on_own)
+        self.live.rivals.connect(self.recorder.on_rivals)
+        self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
+        self.recorder.recording.connect(self.multiplayer.set_recording)
+        self.replays = ReplaysPage(store)
+        self.recorder.saved.connect(lambda path: self.replays.refresh())
+
         self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)])
         self.pages = QStackedWidget()
-        for p in (self.live, self.multiplayer, self.settings):
+        for p in (self.live, self.multiplayer, self.replays, self.settings):
             self.pages.addWidget(p)
         content = QVBoxLayout()
         content.setContentsMargins(theme.GAP, 0, theme.GAP, 0)
@@ -53,6 +66,7 @@ class MainWindow(QMainWindow):
         t2 = QTimer(self)
         t2.timeout.connect(self.live.tick)
         t2.timeout.connect(self.multiplayer.tick)
+        t2.timeout.connect(self.recorder.tick)
         t2.start(250)
 
         if autostart:
@@ -87,8 +101,9 @@ class MainWindow(QMainWindow):
 
         self.tab_live = Button("Live", "chart-line", checkable=True)
         self.tab_mp = Button("Multiplayer", "users", checkable=True)
+        self.tab_rep = Button("Replays", "history", checkable=True)
         self.tab_set = Button("Settings", "settings", checkable=True)
-        self.tabs = (self.tab_live, self.tab_mp, self.tab_set)
+        self.tabs = (self.tab_live, self.tab_mp, self.tab_rep, self.tab_set)
         group = QButtonGroup(self)
         group.setExclusive(True)
         for i, b in enumerate(self.tabs):
@@ -102,6 +117,13 @@ class MainWindow(QMainWindow):
         self.tabs[i].setChecked(True)
         self.pages.currentWidget().dirty = True
 
+    def on_prefs(self, key):
+        if key == "options":
+            self.recorder.set_enabled(self.prefs.option("auto_record"))
+        else:
+            self.live.set_charts(self.prefs.shown(key))
+
     def closeEvent(self, ev):
         self.live.stop()
+        self.recorder.finish()  # keep a race that is still going
         super().closeEvent(ev)

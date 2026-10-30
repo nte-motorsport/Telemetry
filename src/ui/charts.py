@@ -210,8 +210,10 @@ class LineChart(BaseChart):
 
 
 class MapChart(BaseChart):
-    """Top-down trajectory: game +X up, +Y right. Tracks are coloured by run or by speed."""
-    BINS = 24
+    """Top-down trajectory: game +X up, +Y right. Tracks are coloured by run or by speed; a track's tail can
+    fade out instead of ending abruptly."""
+    BINS = 24   # speed colours
+    ALPHAS = 12  # steps of a fading tail
 
     def __init__(self):
         super().__init__(axes=False)
@@ -219,13 +221,17 @@ class MapChart(BaseChart):
         self.setAspectLocked(True)
         self.layers = []
         self.markers = pg.ScatterPlotItem(size=12, pen=pg.mkPen(theme.BG, width=2))
-        self.starts = pg.ScatterPlotItem(size=7, pen=None, brush=brush(theme.TEXT))
         self.bar = pg.PlotDataItem(pen=pg.mkPen(theme.MUTED, width=2))
         self.bar_text = pg.TextItem(color=theme.MUTED, anchor=(0, 1))
         self.bar_text.setFont(theme.font(11))
-        for it in (self.starts, self.markers, self.bar):
+        for it in (self.markers, self.bar):
             self.addItem(it)
+        self.markers.setZValue(10)  # above the tracks, which are added later
         self.addItem(self.bar_text, ignoreBounds=True)
+        self.bar_size = None
+        # the aspect lock reshapes the view after set_tracks, e.g. in a tall narrow card, so the scale bar is
+        # placed again whenever the view changes, or it can end up off the edge
+        self.getPlotItem().vb.sigRangeChanged.connect(lambda *_: self.place_bar())
 
     def _layer(self, i):
         while len(self.layers) <= i:
@@ -234,10 +240,24 @@ class MapChart(BaseChart):
             self.layers.append(it)
         return self.layers[i]
 
+    def fade_levels(self, x, y, fade, fade_max):
+        """Per segment, its step of opacity: 0 (almost gone) at the tail up to ALPHAS - 1 (solid) once fade of
+        the track's length (at most fade_max metres) is behind."""
+        top = self.ALPHAS - 1
+        seg = np.hypot(np.diff(x), np.diff(y))
+        if not fade:
+            return np.full(len(seg), top)
+        d = np.cumsum(seg) - seg / 2  # distance from the tail to each segment's middle
+        span = min(d[-1] * fade, fade_max or math.inf)
+        if span <= 0:
+            return np.full(len(seg), top)
+        return np.clip((d / span * self.ALPHAS).astype(int), 0, top)
+
     def set_tracks(self, tracks, markers=()):
-        """tracks: [dict(x, y, color=None | speeds=array, width)]; markers: [(x, y, color)]"""
+        """tracks: [dict(x, y, color=None | speeds=array, width, fade=share of the length to fade at the start,
+        fade_max=metres)]; markers: [(x, y, color)]"""
         used = 0
-        allx, ally, starts = [], [], []
+        allx, ally = [], []
         for tr in tracks:
             x, y = np.asarray(tr["x"], float), np.asarray(tr["y"], float)
             if len(x) < 2:
@@ -246,32 +266,36 @@ class MapChart(BaseChart):
             x, y = x[keep], y[keep]
             allx.append(x)
             ally.append(y)
-            starts.append((y[0], x[0]))
+            level = self.fade_levels(x, y, tr.get("fade"), tr.get("fade_max"))
             if tr.get("speeds") is not None:
-                v = np.asarray(tr["speeds"], float)[keep][1:]
+                v = np.nan_to_num(np.asarray(tr["speeds"], float)[keep][1:])
                 b = np.clip((v / 250 * self.BINS).astype(int), 0, self.BINS - 1)
-                for k in np.unique(b):
-                    idx = np.nonzero(b == k)[0]
-                    sx = np.empty(len(idx) * 2)
-                    sy = np.empty(len(idx) * 2)
-                    sx[0::2], sx[1::2] = y[idx], y[idx + 1]
-                    sy[0::2], sy[1::2] = x[idx], x[idx + 1]
-                    pen = pg.mkPen(speed_color((k + 0.5) * 250 / self.BINS), width=tr.get("width", 3))
-                    pen.setCapStyle(Qt.RoundCap)
-                    self._layer(used).setData(sx, sy, pen=pen)
-                    used += 1
             else:
-                sx = np.repeat(y, 2)[1:-1]
-                sy = np.repeat(x, 2)[1:-1]
-                pen = pg.mkPen(tr["color"], width=tr.get("width", 3))
-                pen.setCapStyle(Qt.RoundCap)
+                b = np.zeros(len(level), int)
+            key = b * self.ALPHAS + level
+            for k in np.unique(key):
+                idx = np.nonzero(key == k)[0]
+                sx = np.empty(len(idx) * 2)
+                sy = np.empty(len(idx) * 2)
+                sx[0::2], sx[1::2] = y[idx], y[idx + 1]
+                sy[0::2], sy[1::2] = x[idx], x[idx + 1]
+                bin_, lv = divmod(int(k), self.ALPHAS)
+                c = QColor(speed_color((bin_ + 0.5) * 250 / self.BINS) if tr.get("speeds") is not None
+                           else tr["color"])
+                pen = pg.mkPen(c, width=tr.get("width", 3))
+                if lv < self.ALPHAS - 1:
+                    c.setAlphaF(((lv + 0.5) / self.ALPHAS) ** 1.5)
+                    pen.setColor(c)
+                    pen.setCapStyle(Qt.FlatCap)  # round caps would overlap into darker beads
+                else:
+                    pen.setCapStyle(Qt.RoundCap)
                 self._layer(used).setData(sx, sy, pen=pen)
                 used += 1
         for it in self.layers[used:]:
             it.setData([], [])
-        self.starts.setData([s[0] for s in starts], [s[1] for s in starts])
         self.set_markers(markers)
         if not allx:
+            self.bar_size = None
             self.bar.setData([], [])
             self.bar_text.setText("")
             self.setRange(xRange=(-1, 1), yRange=(-1, 1), padding=0)
@@ -283,11 +307,16 @@ class MapChart(BaseChart):
         cx, cy = (Y.max() + Y.min()) / 2, (X.max() + X.min()) / 2
         h = span / 2 * 1.08
         self.setRange(xRange=(cx - h, cx + h), yRange=(cy - h, cy + h), padding=0)
+        self.bar_size = nice_step(span, 4)
+        self.bar_text.setText(dist_fmt(self.bar_size))
+        self.place_bar()
+
+    def place_bar(self):
+        if not self.bar_size:
+            return
         (x0, x1), (y0, y1) = self.viewRange()
-        size = nice_step(span, 4)
         bx, by = x0 + (x1 - x0) * 0.03, y0 + (y1 - y0) * 0.04
-        self.bar.setData([bx, bx + size], [by, by])
-        self.bar_text.setText(dist_fmt(size))
+        self.bar.setData([bx, bx + self.bar_size], [by, by])
         self.bar_text.setPos(bx, by + (y1 - y0) * 0.01)
 
     def set_markers(self, markers):
