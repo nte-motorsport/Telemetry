@@ -9,6 +9,8 @@ Packet layout (bit offsets relative to MARKER, LSB-first UE bit stream):
 """
 import struct
 
+from capture import bits
+
 MARKER, SCALE = 0x041, 10000.0  # SCALE: raw units -> metres
 
 
@@ -16,9 +18,7 @@ def decode(payload: bytes):
     """Yield every (ts, x, y, z, cam_yaw) candidate; the tracker picks the plausible one."""
     n = int.from_bytes(payload, "little")
     nbits = len(payload) * 8
-    for off in range(32, nbits - 70):
-        if (n >> off) & 0x3FF != MARKER:
-            continue
+    for off in bits.find(payload, MARKER, 10, 32, nbits - 70):
         hdr = (n >> (off + 10)) & 0x7F
         w = hdr & 0x3F
         if not (hdr & 0x40) or not (12 <= w <= 32) or off + 17 + 3 * w + 3 > nbits:

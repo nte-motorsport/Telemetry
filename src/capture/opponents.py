@@ -13,6 +13,8 @@ import math
 import struct
 from collections import deque
 
+from capture import bits
+
 SIG = 2074
 NEAR = 3000.0  # m: a position this far from the player is not a car in the same race
 
@@ -22,9 +24,7 @@ def decode(payload):
     a car."""
     n = int.from_bytes(payload, "little")
     out = []
-    for o in range(200, len(payload) * 8 - 96):
-        if (n >> (o - 200)) & 0x1FFF != SIG:
-            continue
+    for o in (s + 200 for s in bits.find(payload, SIG, 13, 0, len(payload) * 8 - 296)):
         p = tuple(struct.unpack("<f", struct.pack("<I", (n >> (o + 32 * i)) & 0xFFFFFFFF))[0] / 100
                   for i in range(3))
         if all(math.isfinite(c) and abs(c) < 1e5 for c in p) and any(abs(c) > 0.01 for c in p):
