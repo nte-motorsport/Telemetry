@@ -301,9 +301,10 @@ class MapChart(BaseChart):
             return np.full(len(seg), top)
         return np.clip((d / span * self.ALPHAS).astype(int), 0, top)
 
-    def set_tracks(self, tracks, markers=()):
+    def set_tracks(self, tracks, markers=(), area=None):
         """tracks: [dict(x, y, color=None | speeds=array, width, fade=share of the length to fade at the start,
-        fade_max=metres)]; markers: [(x, y, color)]"""
+        fade_max=metres)]; markers: [(x, y, color)]; area: (xs, ys) the view is fitted to instead of the
+        tracks, so it holds still while they grow (a replay)."""
         used = 0
         allx, ally = [], []
         for tr in tracks:
@@ -342,6 +343,8 @@ class MapChart(BaseChart):
         for it in self.layers[used:]:
             it.setData([], [])
         self.set_markers(markers)
+        if area is not None and len(area[0]):
+            allx, ally = [np.asarray(area[0], float)], [np.asarray(area[1], float)]
         self.scale.active = bool(allx)
         self.scale.update()
         if not allx:

@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QMessageBox, QSlider, QVBoxLayout, QWidget
 
 from ui import charts, theme
-from ui.multiplayer_page import rival_color, segments
+from ui.multiplayer_page import WINDOW, rival_color, segments
 from ui.widgets import Button, card, label, legend_dot, panel
 
 STEPS = 10  # timeline positions per second
@@ -24,6 +24,7 @@ class ReplaysPage(QWidget):
         super().__init__()
         self.store = store
         self.cars = []  # (name, colour, array of [t, x, y, z, km/h]) of the open replay
+        self.area = None  # (xs, ys) of every track of the open replay, the map is fitted to
         self.opened = False  # its file; None once drawn with no replay open, False before anything is drawn
         self.duration = 0.0
         self.pos = 0.0
@@ -137,10 +138,10 @@ class ReplaysPage(QWidget):
     # ----- the replay -----
 
     def draw(self):
-        """Everything that doesn't move with the timeline: the whole race's tracks and speeds."""
-        self.c_map.set_tracks([dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2,
-                                    fade=0.3 if i == 0 else None, fade_max=300)
-                               for n, c, a in self.cars for i, s in enumerate(segments(a))])
+        """Everything that doesn't move with the timeline: the whole race's speeds and the map's view."""
+        # the map is fitted to the whole race once; the tracks are drawn as the timeline moves (see seek)
+        self.area = (np.concatenate([a[:, 1] for _, _, a in self.cars]),
+                     np.concatenate([a[:, 2] for _, _, a in self.cars])) if self.cars else None
         # nothing open: a minute, so the axis doesn't read 0:00 four times
         self.c_speed.set_series([(a[:, 0], a[:, 4], c, 2.0 if n == "You" else 1.6) for n, c, a in self.cars],
                                 (0, self.duration if self.cars and self.duration > 0 else 60.0))
@@ -161,11 +162,18 @@ class ReplaysPage(QWidget):
             self.slider.blockSignals(True)
             self.slider.setValue(int(self.pos * STEPS))
             self.slider.blockSignals(False)
-        markers = []
-        for _, c, a in self.cars:
+        # as on the Multiplayer page: each car trails its last minute, fading out towards the oldest end
+        tracks, markers = [], []
+        for n, c, a in self.cars:
+            i, j = np.searchsorted(a[:, 0], (self.pos - WINDOW, self.pos), "right")
+            trail = a[i:j]
             if a[0, 0] <= self.pos <= a[-1, 0]:  # a car that hasn't joined yet or has left shows no dot
-                markers.append((np.interp(self.pos, a[:, 0], a[:, 1]), np.interp(self.pos, a[:, 0], a[:, 2]), c))
-        self.c_map.set_markers(markers)
+                now = np.array([[self.pos] + [np.interp(self.pos, a[:, 0], a[:, k]) for k in range(1, a.shape[1])]])
+                trail = np.vstack([trail, now])
+                markers.append((now[0, 1], now[0, 2], c))
+            tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2, fade=0.6 if k == 0 else None)
+                       for k, s in enumerate(segments(trail))]
+        self.c_map.set_tracks(tracks, markers, self.area)
         self.cursor.setPos(self.pos)
         self.cursor.setVisible(bool(self.cars))
         self.time.setText(f"{clock(self.pos)} / {clock(self.duration)}")
