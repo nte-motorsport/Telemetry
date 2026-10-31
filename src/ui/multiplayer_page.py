@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from ui import charts, theme
-from ui.widgets import card, legend_dot
+from ui.widgets import card
 
 WINDOW = 60  # seconds of tracks and speed shown
 RIVAL_COLORS = ["#3d8eff", "#3ad164", "#b388ff", "#ff8c42", "#4cc9f0", "#f72585"]
@@ -32,7 +32,6 @@ class MultiplayerPage(QWidget):
         self.me = deque()  # (t, x, y, speed km/h)
         self.rivals = {}   # number -> deque of (t, x, y, speed km/h or NaN)
         self.left = set()  # numbers no longer sent: their last minute stays until the next race
-        self.recording = False
         self.dirty = True
 
         h = QHBoxLayout(self)
@@ -40,8 +39,8 @@ class MultiplayerPage(QWidget):
         h.setSpacing(theme.GAP)
         self.c_map = charts.MapChart()
         self.c_speed = charts.LineChart(lambda s: f"{s:.0f} s", zero=True)
-        self.map_card = card("Map", self.c_map, " ")
-        self.speed_card = card("Speed", self.c_speed, " ")
+        self.map_card = card("Map", self.c_map)
+        self.speed_card = card("Speed", self.c_speed)
         h.addWidget(self.map_card, 1)
         h.addWidget(self.speed_card, 1)
 
@@ -80,11 +79,9 @@ class MultiplayerPage(QWidget):
             return
         self.dirty = False
         now = time.monotonic()
-        cars = [("You", theme.ACCENT, self.me)]
-        cars += [(f"Rival {n}" + (" (left)" if n in self.left else ""), rival_color(n), h)
-                 for n, h in sorted(self.rivals.items())]
+        cars = [(theme.ACCENT, self.me)] + [(rival_color(n), h) for n, h in sorted(self.rivals.items())]
         tracks, markers, series = [], [], []
-        for name, color, h in cars:
+        for color, h in cars:
             if not h:
                 continue
             a = np.array(h, float)
@@ -95,15 +92,6 @@ class MultiplayerPage(QWidget):
             series.append((a[:, 0] - now, a[:, 3], color, 2.2 if h is self.me else 1.8))
         self.c_map.set_tracks(tracks, markers)
         self.c_speed.set_series(series, (-WINDOW, 0))
-        parts = [f"{legend_dot(color)} {name}" for name, color, h in cars if h]
-        if self.recording:
-            parts.append(f'<span style="color:{theme.DANGER}">●</span> recording')
-        for c in (self.map_card, self.speed_card):
-            c.legend.setText(" &nbsp; ".join(parts))
-
-    def set_recording(self, on):
-        self.recording = on
-        self.dirty = True
 
     def tick(self):
         self.dirty = True  # the time axis moves even without new data

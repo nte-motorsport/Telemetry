@@ -53,6 +53,13 @@ class Tracker:
     # Velocity comes from the move over this long, not from one step: client timestamps are whole frames
     # and the position isn't taken exactly then, so a single 67 ms step reads as 120, then 212 km/h.
     VEL_SPAN = 0.4
+    # m/s: a step faster than this is the game moving the car (R puts it back on the track: 45 m in
+    # 0.26 s once), not driving (~80 m/s at most); motion starts again after it instead of reading the
+    # move as a spike to 300 km/h and back
+    TELEPORT = 120.0
+    # m/s: on foot is 36 km/h at most; after the finish the game drives the car on at ~70 km/h while the
+    # client sends every frame as on foot, so a car still going faster than this stays a car
+    FOOT_MAX = 45 / 3.6
 
     def __init__(self, alpha=0.35):
         self.prev = None
@@ -66,6 +73,7 @@ class Tracker:
         self.odo = 0.0
         self.car = CarDetector()
         self.jumped = False  # the next sample is the first one after a teleport
+        self.in_car = False  # as last reported
 
     def reset_motion(self):
         """Forget the smoothed motion: after a teleport (a test drive moves you to another world and
@@ -77,6 +85,16 @@ class Tracker:
         self.yaw_rate = 0.0
         self.car = CarDetector()
         self.jumped = True
+
+    def relocated(self):
+        """The game moved the car within the same session (R: back on the track). The client clock carries
+        on, so unlike reset_motion this is no new place: the charts, the rivals and a race being recorded
+        go on; only the motion, which belongs to where the car was, is forgotten."""
+        self.v = [0.0, 0.0, 0.0]
+        self.acc = [0.0, 0.0]
+        self.recent.clear()
+        self.heading = None
+        self.yaw_rate = 0.0
 
     @staticmethod
     def consistent(a, b):
@@ -91,7 +109,17 @@ class Tracker:
                 self.misses = 0
                 return min(ok, key=lambda c: c[0])
             self.misses = getattr(self, "misses", 0) + 1
+            # moved far in a moment while the client clock carried on: the game put the car somewhere else
+            # (R); taken as soon as two packets agree on the new place, without waiting for the reseed
+            seed = getattr(self, "seed", None)
+            for c in cands:
+                if seed and self.consistent(seed, c) and 0 < seed[0] - self.prev[0] < 3:
+                    self.relocated()
+                    self.prev, self.seed, self.misses = seed[:4], None, 0
+                    return c
             if self.misses < 20:
+                self.seed = min((c for c in cands if 0 < c[0] - self.prev[0] < 3), default=None,
+                                key=lambda c: c[0])
                 return None
         # (re)seed: accept a fix only once two packets in a row agree (reconnect / teleport)
         seed = getattr(self, "seed", None)
@@ -106,17 +134,21 @@ class Tracker:
 
     def update(self, ts, x, y, z, cam_yaw):
         out = None
-        in_car = self.car.update(ts)
+        sends_as_car = self.car.update(ts)
+        in_car = sends_as_car or (self.in_car and math.hypot(self.v[0], self.v[1]) > self.FOOT_MAX)
         if self.prev:
             pts, px, py, pz = self.prev
             dt = ts - pts
             if dt <= 0:
                 return None
-            if in_car and dt < 0.05:
+            if sends_as_car and dt < 0.05:
                 # a car sends every 67-100 ms plus the odd fix a frame later; over such a short
                 # interval position noise reads as a jump in speed (tens of g), so skip that fix
                 return None
-            if dt >= 2:  # a pause in sending: the move across it says nothing about speed
+            if dt >= 2 or math.dist((x, y, z), (px, py, pz)) > self.TELEPORT * dt:
+                # a pause in sending, or the game moving the car: the move says nothing about speed
+                if dt < 2:
+                    self.relocated()
                 self.recent.clear()
             else:
                 k = self.alpha
@@ -157,5 +189,6 @@ class Tracker:
                            cam_yaw=round(cam_yaw, 1), odo_km=round(self.odo / 1000, 3), in_car=in_car,
                            jump=self.jumped)
                 self.jumped = False
+                self.in_car = in_car
         self.prev = (ts, x, y, z)
         return out

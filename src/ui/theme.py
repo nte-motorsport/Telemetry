@@ -88,6 +88,10 @@ QToolTip {{ color: {TEXT}; background: {MENU_BG}; border: 2px solid {ACCENT}; bo
 *[role="muted"] {{ color: {MUTED}; }}
 *[role="tileValue"] {{ font-size: {FS_TITLE}px; }}
 *[role="tileValueBig"] {{ font-size: {FS_TITLE}px; color: {ACCENT}; }}
+*[role="listTitle"] {{ font-size: {FS_LG}px; }}
+*[role="chipValue"] {{ font-size: 24px; }}
+*[role="raceRow"][sel="true"] QLabel {{ color: #000; }}
+*[role="panel"][off="true"] *[role="chipValue"] {{ color: {MUTED}; }}
 
 QPushButton {{
     min-height: {CONTROL_HEIGHT - 4}px; max-height: {CONTROL_HEIGHT - 4}px; padding: 0 10px;
@@ -146,9 +150,11 @@ QScrollBar::handle:hover {{ background: {ACCENT}; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ width: 0; height: 0; background: none; }}
 
 QListWidget {{ background: transparent; border: none; outline: none; font-size: {FS_MD}px; }}
-QListWidget::item {{ padding: 8px 6px; border: 2px solid transparent; border-radius: {RADIUS}px; color: {TEXT}; }}
+QListWidget::item {{ margin-bottom: {GAP}px; padding: 8px 6px; border: 2px solid transparent; border-radius: {RADIUS}px; color: {TEXT}; }}
 QListWidget::item:hover {{ background: {ACCENT_DARK}; }}
-QListWidget::item:selected {{ background: {ACCENT_DARK}; border-color: {ACCENT}; color: {TEXT}; }}
+QListWidget::item:selected {{ background: {ACCENT}; border-color: {ACCENT}; color: #000; }}
+QListWidget::item:selected:hover {{ background: {ACCENT_HOVER}; border-color: {ACCENT_HOVER}; }}
+QListWidget QScrollBar:vertical {{ width: {GAP + 10}px; margin: 0 0 0 {GAP}px; }}
 
 QSlider::groove:horizontal {{ height: 6px; background: rgba(255, 255, 255, 40); border-radius: 3px; }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
