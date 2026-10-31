@@ -35,6 +35,7 @@ class Button(QPushButton):
     def __init__(self, text, icon_name=None, checkable=False, icon_only=False):
         super().__init__("" if icon_only else text)
         self.icon_name = icon_name
+        self.tint = None  # colour of the border and icon instead of the accent
         self.setCheckable(checkable)
         self.setCursor(Qt.PointingHandCursor)
         self.setLayoutDirection(Qt.RightToLeft)
@@ -51,6 +52,14 @@ class Button(QPushButton):
         self.style().polish(self)
         self.refresh()
 
+    def set_tint(self, color):
+        """Border and icon in this colour, and its dark shade on hover (as ACCENT_DARK is the accent's)."""
+        self.tint = color
+        c = QColor(color)
+        dark = QColor(int(c.red() * 0.17), int(c.green() * 0.17), int(c.blue() * 0.17)).name()
+        self.setStyleSheet(f"QPushButton {{ border-color: {color}; }} QPushButton:hover {{ background: {dark}; }}")
+        self.refresh()
+
     def set_icon(self, name):
         self.icon_name = name
         self.refresh()
@@ -59,7 +68,7 @@ class Button(QPushButton):
         if not self.icon_name:
             return
         filled = self.isChecked() or self.property("primary")
-        color = "#000000" if filled else theme.DANGER if self.property("danger") else theme.ACCENT
+        color = ("#000000" if filled else theme.DANGER if self.property("danger") else self.tint or theme.ACCENT)
         self.setIcon(theme.icon(self.icon_name, color))
 
 

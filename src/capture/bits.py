@@ -3,7 +3,8 @@ import numpy as np
 
 
 def find(payload, value, width, lo=0, hi=None):
-    """Every offset o in lo..hi-1 at which the width bits starting at bit o equal value.
+    """Every offset o in lo..hi-1 at which the width bits starting at bit o equal value (or, given a tuple,
+    any of its values).
 
     Done on arrays: testing each offset by shifting the packet as one big integer costs time in
     proportion to the packet's size at every offset, which a stream of large packets (a download running
@@ -16,4 +17,5 @@ def find(payload, value, width, lo=0, hi=None):
     v = np.zeros(n, np.uint32)
     for i in range(width):
         v |= bits[lo + i:lo + i + n].astype(np.uint32) << i
-    return (np.flatnonzero(v == value) + lo).tolist()
+    hit = np.isin(v, value) if isinstance(value, tuple) else v == value
+    return (np.flatnonzero(hit) + lo).tolist()

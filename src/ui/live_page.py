@@ -3,7 +3,7 @@ import time
 from collections import deque
 
 import numpy as np
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 import windows
@@ -79,8 +79,8 @@ class LivePage(QWidget):
         v.addWidget(self.grid, 1)
 
     def build_statusbar(self):
-        """The bar along the bottom of the window: whether data is coming in and how fast, and the
-        Clear."""
+        """The bar along the bottom of the window: whether data is coming in and how fast, whether a race is
+        being recorded, and the Clear."""
         bar = QFrame()
         bar.setObjectName("statusBar")
         bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
@@ -97,6 +97,11 @@ class LivePage(QWidget):
         self.admin_btn.clicked.connect(lambda: windows.relaunch_as_admin() and QApplication.quit())
         self.admin_btn.hide()
         h.addWidget(self.admin_btn)
+        self.rec = label(f'<span style="color:{theme.DANGER}">●</span> Recording race', "muted")
+        self.rec.setTextFormat(Qt.RichText)
+        self.rec.setToolTip("An online race is being recorded; it will be on the Replays page once it ends")
+        self.rec.hide()
+        h.addWidget(self.rec)
         self.rate = label("", "muted")
         h.addWidget(self.rate)
         clr = Button("Clear", "eraser")
@@ -150,6 +155,9 @@ class LivePage(QWidget):
         self.live_max = max(self.live_max, d["speed_kmh"])
         self.dirty = True
         self.driving.emit(d)
+
+    def set_recording(self, on):
+        self.rec.setVisible(on)
 
     def set_charts(self, keys):
         self.grid.set_order(keys)

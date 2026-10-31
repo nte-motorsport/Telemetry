@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         self.live.driving.connect(self.recorder.on_own)
         self.live.rivals.connect(self.recorder.on_rivals)
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
-        self.recorder.recording.connect(self.multiplayer.set_recording)
+        self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
