@@ -1,7 +1,8 @@
 """Recorded online races, one gzipped JSON file each in %APPDATA%\\NTE Telemetry\\replays.
 
 A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
-           "me": [[t, x, y, z, km/h], ...], "rivals": {"1": [[t, x, y, z, km/h or null], ...], ...}}
+           "me": [[t, x, y, z, km/h], ...], "rivals": {"1": [[t, x, y, z, km/h or null], ...], ...},
+           "level": "/Game/Maps/..." (the game world, when it was known; replays before 2026-11-03 have none)}
 with t in seconds from the start of the recording."""
 import gzip
 import json

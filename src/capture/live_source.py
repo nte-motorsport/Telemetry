@@ -6,6 +6,7 @@ from collections import deque
 from PySide6.QtCore import QThread, Signal
 
 from capture import opponents
+from capture.levels import find_level
 from capture.protocol import decode
 from capture.raw_socket import RawCapture
 from capture.tracker import Tracker
@@ -52,6 +53,7 @@ class LiveSource(QThread):
     sample = Signal(dict)       # one tracker output, same fields as tracker.FIELDS
     rivals = Signal(object)     # other racers after a server update, see opponents.Opponents.update
     failed = Signal(str, str)   # kind ("admin" | "error"), message
+    level = Signal(str)         # the game world (UE level path) the game's server is on, "" while not known
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
     BUSY = 300    # packets a second: the game sends up to ~120, so a flow this busy (a video stream) is
@@ -68,6 +70,10 @@ class LiveSource(QThread):
         self.probes = {}    # flow -> Probe
         self.rate_at = -math.inf
         self.rates, self.last_rates = {}, {}  # flow -> packets this second / the one before
+        # (source port, destination port) -> the level packets of that flow named: the server names it right
+        # after connecting, before the flow is known to be the game's, so every flow is looked at
+        self.levels = {}
+        self.world = ""  # as last emitted
 
     def stop(self):
         self._stop = True
@@ -121,6 +127,26 @@ class LiveSource(QThread):
         if recs:
             self.rivals.emit(self.opponents.update(time.monotonic() if t is None else t, recs, me[1:4]))
 
+    def handle(self, sport, dport, payload, now):
+        """One UDP datagram of the capture: (source port, destination port), payload, arrival time."""
+        lv = find_level(payload)
+        if lv:
+            if len(self.levels) >= self.PROBES and (sport, dport) not in self.levels:
+                self.levels.clear()
+            self.levels[(sport, dport)] = lv
+        # the client's own movement goes to the game server, so the server's port is the destination
+        server = self.flow[1] if self.flow else None
+        flow = (sport, dport)
+        if flow == self.flow or (now - self.seen > self.ALIVE and not self.busy(flow, now)):
+            self.feed(payload, flow, now)
+        elif sport == server and dport == self.flow[0]:
+            self.feed_server(payload)
+        # the game's server -> client direction is the reverse of its flow
+        world = self.levels.get((self.flow[1], self.flow[0]), "") if self.flow else ""
+        if world != self.world:
+            self.world = world
+            self.level.emit(world)
+
     def run(self):
         try:
             cap = RawCapture(self.ip)
@@ -132,14 +158,7 @@ class LiveSource(QThread):
             return
         try:
             for sport, dport, payload in cap.packets(lambda: self._stop):
-                now = time.monotonic()
-                # the client's own movement goes to the game server, so the server's port is the destination
-                server = self.flow[1] if self.flow else None
-                flow = (sport, dport)
-                if flow == self.flow or (now - self.seen > self.ALIVE and not self.busy(flow, now)):
-                    self.feed(payload, flow, now)
-                elif sport == server and dport == self.flow[0]:
-                    self.feed_server(payload)
+                self.handle(sport, dport, payload, time.monotonic())
         except OSError as e:
             self.failed.emit("error", f"Capture stopped: {e}")
         finally:

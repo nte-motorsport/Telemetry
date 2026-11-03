@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
         self.live.driving.connect(self.multiplayer.on_own)
         self.live.rivals.connect(self.multiplayer.on_rivals)
         self.live.jumped.connect(self.multiplayer.clear)
+        self.live.world.connect(self.multiplayer.set_world)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
         self.prefs.changed.connect(self.on_prefs)
@@ -45,11 +46,13 @@ class MainWindow(QMainWindow):
         self.live.driving.connect(self.recorder.on_own)
         self.live.rivals.connect(self.recorder.on_rivals)
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
+        self.live.world.connect(self.recorder.set_world)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
         self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)])
+        self.settings.maps_changed.connect(self.replays.pick_map)  # Live and Multiplayer look every few seconds
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
             self.pages.addWidget(p)
