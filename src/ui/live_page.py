@@ -1,6 +1,5 @@
 """The Live page: telemetry tiles and the last minute on charts."""
 import time
-from collections import deque
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
@@ -21,6 +20,45 @@ def signed(v):
     return f"{v:+.2f}"
 
 
+class History:
+    """The live samples as numpy columns, appended in place; the oldest are dropped by moving the start, so a
+    frame takes slices instead of rebuilding lists from every sample's dict. Times ("w") only grow."""
+    KEYS = ("w", "x", "y", "z", "speed_kmh", "g_long", "g_lat", "yaw_rate")
+
+    def __init__(self, size=4096):
+        self.col = {k: i for i, k in enumerate(self.KEYS)}
+        self.a = np.empty((len(self.KEYS), size))
+        self.lo = self.hi = 0  # the samples kept are a[:, lo:hi]
+
+    def __len__(self):
+        return self.hi - self.lo
+
+    def __getitem__(self, key):
+        return self.a[self.col[key], self.lo:self.hi]
+
+    def append(self, d):
+        if self.hi == self.a.shape[1]:
+            n = len(self)
+            # always a new array: the charts may still hold slices of the old one until they repaint
+            a = np.empty((len(self.KEYS), max(self.a.shape[1], 2 * n)))
+            a[:, :n] = self.a[:, self.lo:self.hi]
+            self.a, self.lo, self.hi = a, 0, n
+        self.a[:, self.hi] = [d[k] for k in self.KEYS]
+        self.hi += 1
+
+    def since(self, now, span):
+        """Index (from the oldest kept) of the first sample at most span seconds before now. Times only grow,
+        so the older ones are the ones before it."""
+        return int(np.count_nonzero(now - self["w"] > span))
+
+    def drop_older(self, now, span):
+        """Forget the samples more than span seconds before now."""
+        self.lo += self.since(now, span)
+
+    def clear(self):
+        self.lo = self.hi = 0
+
+
 class LivePage(QWidget):
     driving = Signal(dict)   # each own sample while in a car, as the charts take it
     rivals = Signal(object)  # the other racers, passed on from the capture
@@ -30,8 +68,10 @@ class LivePage(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.live = deque()
+        self.live = History()
+        self.last = None  # the latest sample, for the tiles
         self.live_max = 0.0
+        self.shown = {k for k, _ in self.CHARTS}  # charts on the page; the others are not drawn
         self.source = None
         self.source_desc = ""
         self.ip = ""  # the network chosen in Settings
@@ -150,8 +190,8 @@ class LivePage(QWidget):
             return
         d["w"] = time.monotonic() if wall is None else wall
         self.live.append(d)
-        while self.live and d["w"] - self.live[0]["w"] > LIVE_KEEP:
-            self.live.popleft()
+        self.live.drop_older(d["w"], LIVE_KEEP)
+        self.last = d
         self.live_max = max(self.live_max, d["speed_kmh"])
         self.dirty = True
         self.driving.emit(d)
@@ -161,10 +201,12 @@ class LivePage(QWidget):
 
     def set_charts(self, keys):
         self.grid.set_order(keys)
+        self.shown = set(keys)
         self.dirty = True
 
     def clear(self):
         self.live.clear()
+        self.last = None
         self.live_max = 0.0
         self.dirty = True
 
@@ -182,7 +224,7 @@ class LivePage(QWidget):
             text = f"No data: not in a car or no game traffic ({self.source_desc})"
         self.status.setText(text)
         now = time.monotonic()
-        n = sum(1 for p in reversed(self.live) if now - p["w"] <= 1) if ok and self.in_car else 0
+        n = len(self.live) - self.live.since(now, 1) if ok and self.in_car else 0
         self.rate.setText(f"{n} samples/s" if ok and self.in_car else "")
         self.dirty = True  # the charts' time axis moves even without new data
 
@@ -192,7 +234,7 @@ class LivePage(QWidget):
         if not self.dirty:
             return
         self.dirty = False
-        d = self.live[-1] if self.live else None
+        d = self.last
         T = self.tiles
         if d:
             T["speed"].set(f"{d['speed_kmh']:.0f}")
@@ -208,19 +250,23 @@ class LivePage(QWidget):
             for t in T.values():
                 t.set("–")
         now = time.monotonic()
-        win = [p for p in self.live if now - p["w"] <= LIVE_WINDOW]
-        col = lambda k: np.array([p[k] for p in win], float)
+        L = self.live
+        i = L.since(now, LIVE_WINDOW)
+        col = lambda k: L[k][i:]
         tx = col("w") - now
         xr = (-LIVE_WINDOW, 0)
-        self.c_speed.set_series([(tx, col("speed_kmh"), theme.ACCENT, 2.2)], xr)
-        self.c_g.set_series([(tx, col("g_long"), theme.ACCENT, 1.8), (tx, col("g_lat"), LAT_COLOR, 1.8)], xr)
-        self.c_z.set_series([(tx, col("z"), Z_COLOR, 1.8)], xr)
-        self.c_yaw.set_series([(tx, col("yaw_rate"), YAW_COLOR, 1.8)], xr)
-        allp = list(self.live)
-        self.c_map.set_tracks(
-            [dict(x=[p["x"] for p in allp], y=[p["y"] for p in allp], speeds=[p["speed_kmh"] for p in allp],
-                  fade=0.3, fade_max=300)],
-            [(d["x"], d["y"], theme.TEXT)] if d else [])
-        tail = win[-150:]
-        self.c_gg.set_sets([dict(ga=[p["g_lat"] for p in tail], gl=[p["g_long"] for p in tail],
-                                 color=theme.ACCENT, fade=True)])
+        shown = self.shown
+        if "speed" in shown:
+            self.c_speed.set_series([(tx, col("speed_kmh"), theme.ACCENT, 2.2)], xr)
+        if "g" in shown:
+            self.c_g.set_series([(tx, col("g_long"), theme.ACCENT, 1.8), (tx, col("g_lat"), LAT_COLOR, 1.8)], xr)
+        if "z" in shown:
+            self.c_z.set_series([(tx, col("z"), Z_COLOR, 1.8)], xr)
+        if "yaw" in shown:
+            self.c_yaw.set_series([(tx, col("yaw_rate"), YAW_COLOR, 1.8)], xr)
+        if "map" in shown:
+            self.c_map.set_tracks([dict(x=L["x"], y=L["y"], speeds=L["speed_kmh"], fade=0.3, fade_max=300)],
+                                  [(d["x"], d["y"], theme.TEXT)] if d else [])
+        if "gg" in shown:
+            tail = max(i, len(L) - 150)
+            self.c_gg.set_sets([dict(ga=L["g_lat"][tail:], gl=L["g_long"][tail:], color=theme.ACCENT, fade=True)])
