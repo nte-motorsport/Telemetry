@@ -7,9 +7,11 @@ import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from ui import charts, theme
+from ui.world_map import MapPicker, all_maps
 from ui.widgets import card
 
 WINDOW = 60  # seconds of tracks and speed shown
+MAP_EVERY = 2.0  # s between looks at which game map the tracks are on (while the world isn't known)
 RIVAL_COLORS = ["#3d8eff", "#3ad164", "#b388ff", "#ff8c42", "#4cc9f0", "#f72585"]
 
 
@@ -38,6 +40,8 @@ class MultiplayerPage(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(theme.GAP)
         self.c_map = charts.MapChart()
+        self.maps = MapPicker(all_maps())  # the game map under the tracks: the world's, see set_world
+        self.map_at = -1e9  # when the map was last looked at
         self.c_speed = charts.LineChart(lambda s: f"{s:.0f} s", zero=True)
         self.map_card = card("Map", self.c_map)
         self.speed_card = card("Speed", self.c_speed)
@@ -66,10 +70,18 @@ class MultiplayerPage(QWidget):
         while hist and now - hist[0][0] > WINDOW:
             hist.popleft()
 
+    def set_world(self, level):
+        """The game world (UE level path, "" while not known), from the capture."""
+        self.maps.set_level(level)
+        self.map_at = -1e9
+        self.dirty = True
+
     def clear(self):
         self.me.clear()
         self.rivals.clear()
         self.left.clear()
+        self.maps.reset()  # another place
+        self.c_map.set_backdrop(None)
         self.dirty = True
 
     # ----- rendering -----
@@ -85,11 +97,14 @@ class MultiplayerPage(QWidget):
             if not h:
                 continue
             a = np.array(h, float)
-            # the oldest end of the minute fades out, so each track reads as a tail behind its car
-            tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5,
-                            fade=0.6 if i == 0 else None) for i, s in enumerate(segments(a))]
+            tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5)
+                       for s in segments(a)]
             markers.append((a[-1, 1], a[-1, 2], color))
             series.append((a[:, 0] - now, a[:, 3], color, 2.2 if h is self.me else 1.8))
+        if now - self.map_at >= MAP_EVERY:
+            self.map_at = now
+            own = np.array(self.me, float).reshape(-1, 4)  # (t, x, y, km/h), the last minute
+            self.c_map.set_backdrop(self.maps.update(own[:, 1], own[:, 2]))
         self.c_map.set_tracks(tracks, markers)
         self.c_speed.set_series(series, (-WINDOW, 0))
 

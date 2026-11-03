@@ -8,15 +8,17 @@ import time
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QFontMetrics
+from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QListWidget, QListWidgetItem, QMessageBox, QSizePolicy, QSlider,
                                QVBoxLayout, QWidget)
 
 from ui import charts, theme
 from ui.multiplayer_page import WINDOW, rival_color, segments
 from ui.widgets import Button, card, label, panel
+from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
+NUDGE = 0.1  # s the arrow keys step the timeline by
 
 
 def clock(s):
@@ -113,6 +115,7 @@ class ReplaysPage(QWidget):
         self.dirty = True
         self.playing = QTimer(self)
         self.playing.timeout.connect(self.step)
+        self.held = False  # playing, but held while the slider is dragged
 
         h = QHBoxLayout(self)
         h.setContentsMargins(0, 0, 0, 0)
@@ -130,7 +133,7 @@ class ReplaysPage(QWidget):
         ll.addWidget(self.list, 1)
         btns = QHBoxLayout()
         btns.setSpacing(theme.GAP)
-        folder_btn = Button("Open folder", "folder")
+        folder_btn = Button("Folder", "folder")
         folder_btn.setToolTip("Show the replay files in Explorer")
         folder_btn.clicked.connect(self.open_folder)
         btns.addWidget(folder_btn, 1)
@@ -145,8 +148,11 @@ class ReplaysPage(QWidget):
         right.setSpacing(theme.GAP)
         row = QHBoxLayout()
         row.setSpacing(theme.GAP)
-        self.c_map = charts.MapChart()
-        self.c_speed = charts.LineChart(clock, zero=True)
+        self.c_map = charts.MapChart(interactive=True)
+        self.maps = MapPicker(all_maps())  # the game map under the tracks, see draw
+        self.level = ""  # the open replay's world, if it was recorded
+        self.c_speed = charts.LineChart(clock, zero=True, xzoom=5.0, hover=lambda v: f"{v:.0f} km/h")
+        self.c_speed.clicked.connect(lambda t: self.cars and self.seek(t))  # a click on the chart moves the timeline
         self.cursor = pg.InfiniteLine(angle=90, pen=pg.mkPen(theme.TEXT, width=1, style=Qt.DashLine))
         self.cursor.setOpacity(0.6)
         self.c_speed.addItem(self.cursor, ignoreBounds=True)
@@ -170,10 +176,18 @@ class ReplaysPage(QWidget):
 
         tp, tl = panel(QHBoxLayout)
         self.play_btn = Button("Play", "player-play", icon_only=True)
+        self.play_btn.setToolTip("Play (Space)")
         self.play_btn.clicked.connect(self.toggle_play)
         tl.addWidget(self.play_btn)
+        # keys for the replay, whatever has the focus on this page (shortcuts of a hidden page don't fire)
+        for key, act in ((Qt.Key_Space, self.toggle_play), (Qt.Key_Left, lambda: self.nudge(-NUDGE)),
+                         (Qt.Key_Right, lambda: self.nudge(NUDGE))):
+            QShortcut(QKeySequence(key), self, act)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.valueChanged.connect(lambda v: self.seek(v / STEPS, from_slider=True))
+        # playing holds while the slider is dragged and goes on from where it is let go
+        self.slider.sliderPressed.connect(self.hold)
+        self.slider.sliderReleased.connect(self.resume)
         tl.addWidget(self.slider, 1)
         self.time = label("0:00 / 0:00", "muted")
         self.time.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -228,6 +242,7 @@ class ReplaysPage(QWidget):
         it = self.list.item(row) if row >= 0 else None
         self.cars = []
         self.duration = 0.0
+        self.level = ""
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -236,6 +251,7 @@ class ReplaysPage(QWidget):
                 r = None
             if r:
                 self.duration = r["duration"]
+                self.level = r.get("level") or ""
                 if r["me"]:
                     self.cars.append(("You", theme.ACCENT, np.array(r["me"], float)))
                 for num, rows in sorted(r["rivals"].items(), key=lambda kv: int(kv[0])):
@@ -269,6 +285,9 @@ class ReplaysPage(QWidget):
         self.area = (np.concatenate([a[:, 1] for _, _, a in self.cars]),
                      np.concatenate([a[:, 2] for _, _, a in self.cars])) if self.cars else None
         self.hidden.clear()
+        self.c_map.user_view = False  # a new race: fitted to it, whatever the last one was zoomed to
+        self.pick_map()
+        self.c_speed.user_x = None
         while len(self.pool) < len(self.cars):
             chip = CarChip(self.toggle_car)
             self.chip_row.insertWidget(len(self.pool), chip)
@@ -291,6 +310,16 @@ class ReplaysPage(QWidget):
         self.play_btn.setEnabled(bool(self.cars))
         self.seek(0.0)
 
+    def pick_map(self):
+        """The open replay's game map: the recorded world's; for a replay from before worlds were recorded,
+        the one whose roads the player's own drive lies on. Again when the map packs change."""
+        self.maps.set_level(self.level)
+        own = next((a for n, _, a in self.cars if n == "You"), None)
+        if own is not None:
+            self.maps.update(own[:, 1], own[:, 2])
+        self.c_map.set_backdrop(self.maps.current)
+        self.seek(self.pos)  # draw it
+
     def plot(self):
         """The speed chart, of the cars not hidden."""
         shown = [(n, c, a) for n, c, a in self.cars if n not in self.hidden]
@@ -310,7 +339,7 @@ class ReplaysPage(QWidget):
             self.slider.blockSignals(True)
             self.slider.setValue(int(self.pos * STEPS))
             self.slider.blockSignals(False)
-        # as on the Multiplayer page: each car trails its last minute, fading out towards the oldest end
+        # as on the Multiplayer page: each car trails its last minute
         tracks, markers = [], []
         for (n, c, a), chip in zip(self.cars, self.chips):
             here = a[0, 0] <= self.pos <= a[-1, 0]  # a car that hasn't joined yet or has left shows no dot
@@ -323,14 +352,22 @@ class ReplaysPage(QWidget):
             if here:
                 trail = np.vstack([trail, now])
                 markers.append((now[0, 1], now[0, 2], c))
-            tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2, fade=0.6 if k == 0 else None)
-                       for k, s in enumerate(segments(trail))]
+            tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2)
+                       for s in segments(trail)]
         self.c_map.set_tracks(tracks, markers, self.area)
         self.cursor.setPos(self.pos)
         self.cursor.setVisible(bool(self.cars))
         self.time.setText(f"{clock(self.pos)} / {clock(self.duration)}")
 
+    def nudge(self, dt):
+        """Step the timeline by dt seconds (the arrow keys), playing or not."""
+        if self.cars:
+            self.seek(self.pos + dt)
+            self.c_speed.follow(self.pos)  # a zoomed chart keeps the position in view
+
     def toggle_play(self):
+        if not self.cars:  # Space with no replay open
+            return
         if self.playing.isActive():
             self.stop()
             return
@@ -339,16 +376,33 @@ class ReplaysPage(QWidget):
         self.last = time.monotonic()
         self.playing.start(40)
         self.play_btn.set_icon("player-pause")
-        self.play_btn.setToolTip("Pause")
+        self.play_btn.setToolTip("Pause (Space)")
+
+    def hold(self):
+        if self.playing.isActive():
+            self.playing.stop()  # the button still reads Pause: it is still playing, only held
+            self.held = True
+
+    def resume(self):
+        if not self.held:
+            return
+        self.held = False
+        if self.pos >= self.duration:  # let go at the end
+            self.stop()
+            return
+        self.last = time.monotonic()
+        self.playing.start(40)
 
     def stop(self):
         self.playing.stop()
+        self.held = False
         self.play_btn.set_icon("player-play")
-        self.play_btn.setToolTip("Play")
+        self.play_btn.setToolTip("Play (Space)")
 
     def step(self):
         now = time.monotonic()
         self.seek(self.pos + now - self.last)
+        self.c_speed.follow(self.pos)
         self.last = now
         if self.pos >= self.duration:
             self.stop()

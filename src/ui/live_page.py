@@ -9,11 +9,15 @@ import windows
 from capture.live_source import LiveSource
 from capture.raw_socket import default_ip, local_ips
 from ui import charts, theme
+from ui.world_map import MapPicker, all_maps
 from ui.widgets import Button, ChartGrid, Tile, card, label, legend_dot
 
 LIVE_KEEP = 120  # seconds of live history kept in memory
 LIVE_WINDOW = 60  # seconds shown on the live charts
 LAT_COLOR, Z_COLOR, YAW_COLOR = "#3d8eff", "#3ad164", "#ff8c42"
+# the game map under the trajectory is the one the drive is on, see world_map.MapPicker
+MAP_WINDOW = 60  # s of the drive the map is told from, while the world isn't known
+MAP_EVERY = 2.0  # s between looks at which map it is
 
 
 def signed(v):
@@ -63,6 +67,7 @@ class LivePage(QWidget):
     driving = Signal(dict)   # each own sample while in a car, as the charts take it
     rivals = Signal(object)  # the other racers, passed on from the capture
     jumped = Signal()        # teleported: what came before is another place
+    world = Signal(str)      # the game world (UE level path), "" while not known
     CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
               ("z", "Altitude"), ("yaw", "Yaw rate")]
 
@@ -103,6 +108,9 @@ class LivePage(QWidget):
         self.c_speed = charts.LineChart(xfmt, zero=True)
         self.c_g = charts.LineChart(xfmt, sym=1)
         self.c_map = charts.MapChart()
+        self.maps = MapPicker(all_maps())
+        self.map_at = -1e9  # when the map was last looked at
+        self.level = ""  # the game world, as the server names it
         self.c_gg = charts.GGChart()
         self.c_z = charts.LineChart(xfmt)
         self.c_yaw = charts.LineChart(xfmt, sym=10)
@@ -120,7 +128,7 @@ class LivePage(QWidget):
 
     def build_statusbar(self):
         """The bar along the bottom of the window: whether data is coming in and how fast, whether a race is
-        being recorded, and the Clear."""
+        being recorded."""
         bar = QFrame()
         bar.setObjectName("statusBar")
         bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
@@ -144,10 +152,6 @@ class LivePage(QWidget):
         h.addWidget(self.rec)
         self.rate = label("", "muted")
         h.addWidget(self.rate)
-        clr = Button("Clear", "eraser")
-        clr.setToolTip("Clear the live charts")
-        clr.clicked.connect(self.clear)
-        h.addWidget(clr)
         return bar
 
     # ----- capture -----
@@ -165,6 +169,7 @@ class LivePage(QWidget):
         self.source.sample.connect(self.on_sample)
         self.source.rivals.connect(self.rivals)
         self.source.failed.connect(self.on_failed)
+        self.source.level.connect(self.on_level)
         self.source.start()
         self.tick()
 
@@ -172,6 +177,8 @@ class LivePage(QWidget):
         if self.source:
             self.source.sample.disconnect()
             self.source.rivals.disconnect()
+            self.source.level.disconnect()
+            self.on_level("")
             self.source.stop()
             self.source = None
 
@@ -196,6 +203,14 @@ class LivePage(QWidget):
         self.dirty = True
         self.driving.emit(d)
 
+    def on_level(self, level):
+        self.level = level
+        self.maps.set_level(level)
+        self.map_at = -1e9  # look at the map again at the next frame
+        self.dirty = True
+        self.world.emit(level)
+        self.tick()
+
     def set_recording(self, on):
         self.rec.setVisible(on)
 
@@ -208,16 +223,19 @@ class LivePage(QWidget):
         self.live.clear()
         self.last = None
         self.live_max = 0.0
+        self.maps.reset()  # another place: its map is told again
+        self.c_map.set_backdrop(None)
         self.dirty = True
 
     def tick(self):
         ok = time.monotonic() - self.last_msg < 3
         color = (theme.ACCENT if not self.in_car else "#3ad164") if ok else theme.DANGER
         self.dot.setStyleSheet(f"background:{color}; border-radius:5px;")
+        where = self.source_desc + (f", {self.level.rsplit('/', 1)[-1]}" if self.level else "")
         if ok and not self.in_car:
-            text = f"On foot: paused until you get in a car ({self.source_desc})"
+            text = f"On foot: paused until you get in a car ({where})"
         elif ok:
-            text = f"In a car, receiving data ({self.source_desc})"
+            text = f"In a car, receiving data ({where})"
         elif self.error:
             text = self.error
         else:
@@ -265,7 +283,11 @@ class LivePage(QWidget):
         if "yaw" in shown:
             self.c_yaw.set_series([(tx, col("yaw_rate"), YAW_COLOR, 1.8)], xr)
         if "map" in shown:
-            self.c_map.set_tracks([dict(x=L["x"], y=L["y"], speeds=L["speed_kmh"], fade=0.3, fade_max=300)],
+            if now - self.map_at >= MAP_EVERY:
+                self.map_at = now
+                j = L.since(now, MAP_WINDOW)
+                self.c_map.set_backdrop(self.maps.update(L["x"][j:], L["y"][j:]))
+            self.c_map.set_tracks([dict(x=L["x"], y=L["y"], speeds=L["speed_kmh"])],
                                   [(d["x"], d["y"], theme.TEXT)] if d else [])
         if "gg" in shown:
             tail = max(i, len(L) - 150)

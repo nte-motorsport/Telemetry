@@ -4,11 +4,12 @@ import math
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import functions as fn
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsItem
 
 from ui import theme
+from ui.world_map import MapImage
 
 pg.setConfigOptions(antialias=True, background=None, foreground=theme.MUTED)
 
@@ -59,7 +60,7 @@ class FastCurve(pg.PlotCurveItem):
     Not cached as an image: the live curves change with every frame, so a cache would only be redrawn."""
     CHUNK = 64
 
-    def paint(self, p, *args):
+    def paint(self, p, *_):
         x, y = self.xData, self.yData
         if x is None or len(x) < 2:
             return
@@ -92,10 +93,10 @@ def pen(color, width, cap):
 
 
 class Tracks(pg.GraphicsObject):
-    """The map's tracks as short polylines in many pens, all drawn by one item. A track comes in up to
-    BINS x ALPHAS pens (speed colours, steps of a fading tail): one pyqtgraph item per pen costs more in
-    bookkeeping each frame than the drawing itself, and drawing each segment on its own (with its own two
-    round caps) costs several times what a polyline through the same points does."""
+    """The map's tracks as short polylines in many pens, all drawn by one item. A track comes in up to BINS
+    pens (speed colours): one pyqtgraph item per pen costs more in bookkeeping each frame than the drawing
+    itself, and drawing each segment on its own (with its own two round caps) costs several times what a
+    polyline through the same points does."""
     CHUNK = 64  # segments per polyline at most, as FastCurve's short pieces
 
     def __init__(self):
@@ -127,7 +128,7 @@ class Tracks(pg.GraphicsObject):
                 self.bounds = self.rect.adjusted(-px, -py, px, py)
         return self.bounds
 
-    def paint(self, p, *args):
+    def paint(self, p, *_):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         for pn, poly in self.lines:
             p.setPen(pn)
@@ -185,7 +186,7 @@ class ScaleAxis(Axis):
         self.setHeight(24)  # as tall as the line charts' time axis
         self.active = False
 
-    def paint(self, p, *args):
+    def paint(self, p, *_):
         vb = self.linkedView()
         if not self.active or vb is None:
             return
@@ -251,17 +252,206 @@ class BaseChart(pg.PlotWidget):
 
 
 class LineChart(BaseChart):
-    """Several series against a shared x; optional zero-including or symmetric y range."""
+    """Several series against a shared x; optional zero-including or symmetric y range.
 
-    def __init__(self, xfmt=None, zero=False, sym=None):
+    xzoom: the shortest x span the chart zooms to, None for a fixed x range. With it the wheel moves along x,
+    Alt + wheel zooms x (about the pointer) and dragging moves along x too, all within the x range given to
+    set_series; y fits what is shown. A view zoomed or moved so stays as it is until reset_view() or a double
+    click.
+
+    clicked(x) comes from a click on the plot that doesn't move the pointer (a drag moves the view).
+
+    hover: a format for y values; with it, where the pointer is over the plot a faint line marks the x (and
+    tells it, in xfmt), and every series has a dot and a tip with its value there."""
+    clicked = Signal(float)
+    CLICK_SLOP = 4  # px the pointer may move between press and release for it to be a click, not a drag
+    HOVER_GAP = 2.0  # x: a series with samples further apart than this around the pointer has none there
+    PAN_STEP = 0.1  # share of the shown span one wheel notch moves it by
+    ZOOM_STEP = 0.75  # what one wheel notch with Alt scales the shown span by
+
+    def __init__(self, xfmt=None, zero=False, sym=None, xzoom=None, hover=None):
         super().__init__(xfmt=xfmt)
+        self.xfmt = xfmt or (lambda v: f"{v:g}")
         self.zero, self.sym = zero, sym
+        self.xzoom = xzoom
+        self.user_x = None  # the x range zoomed or moved to by hand
+        self.limits = None  # the x limits last set on the view box
         self.setMinimumHeight(MIN_HEIGHT)
         self.items = []
         self.last = None  # the last set_series() arguments, to thin again for a new width
         self.zero_line = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(theme.MUTED, width=1))
         self.zero_line.setOpacity(0.5)
         self.addItem(self.zero_line, ignoreBounds=True)
+        if xzoom:
+            self.getPlotItem().setMouseEnabled(True, False)
+            self.getPlotItem().vb.sigRangeChangedManually.connect(self.moved_by_hand)
+        self.hover = hover
+        self.hover_at = None  # scene position of the pointer, None when it is away
+        if hover:
+            self.hover_line = pg.InfiniteLine(angle=90, pen=pg.mkPen(theme.TEXT, width=1))
+            self.hover_line.setOpacity(0.35)
+            self.hover_dots = pg.ScatterPlotItem(size=8, pen=pg.mkPen(theme.BG, width=1.5))
+            self.hover_time = self.tip(theme.GRID)
+            self.hover_tips = []  # one per series, made as needed
+            for z, it in enumerate((self.hover_line, self.hover_dots, self.hover_time), 20):
+                it.setZValue(z)
+                self.addItem(it, ignoreBounds=True)
+            self.scene().sigMouseMoved.connect(self.on_hover)
+            self.getPlotItem().vb.sigRangeChanged.connect(lambda *_: self.update_hover())
+            self.update_hover()
+
+    def tip(self, border):
+        """A small label in a box, which keeps its size in pixels however the view is zoomed."""
+        t = pg.TextItem(color=theme.TEXT, fill=pg.mkBrush(QColor(10, 11, 13, 230)), border=pg.mkPen(border, width=1.5))
+        t.setFont(theme.font(11))
+        t.textItem.document().setDocumentMargin(3)
+        return t
+
+    def on_hover(self, pos):
+        self.hover_at = pos
+        self.update_hover()
+
+    def leaveEvent(self, ev):
+        self.hover_at = None
+        if self.hover:
+            self.update_hover()
+        super().leaveEvent(ev)
+
+    def update_hover(self):
+        """The line, the dots and the tips for where the pointer is now (the data or the view may have moved
+        under it)."""
+        if not self.hover:
+            return
+        vb = self.getPlotItem().vb
+        area = vb.sceneBoundingRect()
+        points = []  # (y, colour) of each series at the pointer's x
+        if self.hover_at is not None and self.last and area.contains(self.hover_at):
+            x = vb.mapSceneToView(self.hover_at).x()
+            for xs, ys, color, _ in self.last[0]:
+                xs, ys = np.asarray(xs, float), np.asarray(ys, float)
+                if len(xs) < 2 or not xs[0] <= x <= xs[-1]:
+                    continue
+                i = min(max(int(np.searchsorted(xs, x)), 1), len(xs) - 1)  # xs[i - 1] <= x <= xs[i]
+                dx = xs[i] - xs[i - 1]
+                if dx > self.HOVER_GAP:
+                    continue
+                y = ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / dx if dx > 0 else ys[i]
+                if np.isfinite(y):
+                    points.append((float(y), color))
+        while len(self.hover_tips) < len(points):
+            t = self.tip(theme.TEXT)
+            t.setZValue(23)
+            self.addItem(t, ignoreBounds=True)
+            self.hover_tips.append(t)
+        for t in self.hover_tips[len(points):]:
+            t.hide()
+        shown = bool(points)
+        for it in (self.hover_line, self.hover_dots, self.hover_time):
+            it.setVisible(shown)
+        if not shown:
+            return
+        self.hover_line.setPos(x)
+        self.hover_dots.setData([x] * len(points), [y for y, _ in points], brush=[brush(c) for _, c in points])
+        (_, _), (_, y1) = self.viewRange()
+        self.hover_time.setText(self.xfmt(x))
+        self.hover_time.setAnchor((0.5, 0))
+        self.hover_time.setPos(x, y1)
+        # tips beside the line at their values, pushed apart so they don't cover each other and kept inside
+        # the plot; on the left of the line near the right edge
+        sx = vb.mapViewToScene(QPointF(x, 0)).x()
+        for (y, _), t in zip(points, self.hover_tips):
+            t.setText(self.hover(y))  # first: the sizes below are of the text
+        order = sorted(range(len(points)), key=lambda k: -points[k][0])  # top first
+        h = self.hover_tips[0].boundingRect().height() + 2
+        top = area.top() + h * 1.5  # below the time
+        ys = [vb.mapViewToScene(QPointF(x, points[k][0])).y() for k in order]
+        for j in range(len(ys)):
+            ys[j] = max(ys[j], top if j == 0 else ys[j - 1] + h)
+        ys[-1] = min(ys[-1], area.bottom() - h / 2)
+        for j in range(len(ys) - 2, -1, -1):
+            ys[j] = min(ys[j], ys[j + 1] - h)
+        width = max((t.boundingRect().width() for t in self.hover_tips[:len(points)]), default=0)
+        left = sx + 10 + width > area.right()
+        for j, k in enumerate(order):
+            y, color = points[k]
+            t = self.hover_tips[k]
+            t.border = pg.mkPen(color, width=1.5)
+            t.setAnchor((1, 0.5) if left else (0, 0.5))
+            p = vb.mapSceneToView(QPointF(sx - 10 if left else sx + 10, ys[j]))
+            t.setPos(p.x(), p.y())
+            t.show()
+            t.update()
+
+    def moved_by_hand(self, *_):
+        self.user_x = tuple(self.viewRange()[0])
+        if self.last:
+            self.set_series(*self.last)  # thinned again for what is shown, and y fitted to it
+
+    def reset_view(self):
+        """Show the whole x range again."""
+        self.user_x = None
+        if self.last:
+            self.set_series(*self.last)
+
+    def wheelEvent(self, ev):
+        if not self.xzoom:
+            super().wheelEvent(ev)
+            return
+        ev.accept()
+        # Alt turns the wheel sideways on some systems, so either direction counts
+        notches = (ev.angleDelta().y() or ev.angleDelta().x()) / 120
+        if not notches or not self.last:
+            return
+        x0, x1 = self.viewRange()[0]
+        if ev.modifiers() & Qt.AltModifier:
+            at = self.getPlotItem().vb.mapSceneToView(self.mapToScene(ev.position().toPoint())).x()
+            span = x1 - x0
+            # up zooms in; the span is held within the limits here, about the pointer, rather than by
+            # set_series, which would keep the left end and so move the view at every notch past a limit
+            new = min(max(span * self.ZOOM_STEP ** notches, self.limits[2]), self.limits[3])
+            if abs(new - span) <= 1e-9 * span:  # already at the limit
+                return
+            k = new / span
+            self.user_x = (at - (at - x0) * k, at + (x1 - at) * k)
+        else:
+            d = -notches * self.PAN_STEP * (x1 - x0)  # down moves on, to later
+            self.user_x = (x0 + d, x1 + d)
+        self.set_series(*self.last)  # keeps it inside the range, at least xzoom long
+
+    def mouseDoubleClickEvent(self, ev):
+        if self.xzoom:
+            self.reset_view()
+        super().mouseDoubleClickEvent(ev)
+
+    def mousePressEvent(self, ev):
+        self.dragging = True  # follow() leaves the view to the hand that moves it
+        self.pressed_at = ev.position() if ev.button() == Qt.LeftButton else None
+        super().mousePressEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        self.dragging = False
+        at, self.pressed_at = getattr(self, "pressed_at", None), None
+        super().mouseReleaseEvent(ev)
+        if at is not None and ev.button() == Qt.LeftButton and (ev.position() - at).manhattanLength() <= self.CLICK_SLOP:
+            vb = self.getPlotItem().vb
+            scene = self.mapToScene(ev.position().toPoint())
+            if vb.sceneBoundingRect().contains(scene):
+                self.clicked.emit(vb.mapSceneToView(scene).x())
+
+    FOLLOW = 0.9  # share of the shown span the followed x is kept within
+
+    def follow(self, x):
+        """Keep x (a replay's position, as it plays) in a zoomed view: once it gets FOLLOW of the way across,
+        the view scrolls along with it; if it is out of view (started over, say), the view jumps to it."""
+        if not self.xzoom or not self.user_x or not self.last or getattr(self, "dragging", False):
+            return
+        x0, x1 = self.viewRange()[0]
+        span = x1 - x0
+        if x0 <= x <= x0 + self.FOLLOW * span:
+            return
+        a = x - self.FOLLOW * span if x > x0 else x - (1 - self.FOLLOW) * span
+        self.user_x = (a, a + span)
+        self.set_series(*self.last)  # keeps it inside the range
 
     def set_series(self, series, xrange=None):
         """series: [(xs, ys, color, width)]"""
@@ -277,6 +467,16 @@ class LineChart(BaseChart):
             if len(xs):
                 xlo, xhi = min(xlo, xs[0]), max(xhi, xs[-1])
         x0, x1 = xrange if xrange else ((xlo, xhi) if math.isfinite(xlo) and xhi > xlo else (0, 1))
+        if self.xzoom:
+            # the view box keeps a view zoomed or moved by hand inside the whole range
+            limits = (x0, x1, min(self.xzoom, x1 - x0), x1 - x0)
+            if limits != self.limits:
+                self.limits = limits
+                self.getPlotItem().vb.setLimits(xMin=x0, xMax=x1, minXRange=limits[2], maxXRange=limits[3])
+            if self.user_x:
+                span = min(max(self.user_x[1] - self.user_x[0], limits[2]), x1 - x0)
+                a = min(max(self.user_x[0], x0), x1 - span)
+                x0, x1 = a, a + span
         columns = int(self.getPlotItem().vb.width()) or self.width()
         for it, (xs, ys, color, width) in zip(self.items, series):
             xs, ys = peak_thin(np.asarray(xs, float), np.asarray(ys, float), x0, x1, columns)
@@ -302,6 +502,8 @@ class LineChart(BaseChart):
         self.setRange(xRange=(x0, x1), yRange=(lo - pad, hi + pad), padding=0)
         self.zero_line.setVisible(bool(lo < 0 < hi))
         self.show_empty(empty)
+        if self.hover:
+            self.update_hover()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
@@ -311,13 +513,18 @@ class LineChart(BaseChart):
 
 
 class MapChart(BaseChart):
-    """Top-down trajectory: game +X up, +Y right. Tracks are coloured by run or by speed; a track's tail can
-    fade out instead of ending abruptly."""
-    BINS = 24   # speed colours
-    ALPHAS = 12  # steps of a fading tail
+    """Top-down trajectory: game +X up, +Y right. Tracks are coloured by run or by speed.
 
-    def __init__(self):
+    interactive: the wheel zooms (about the pointer) and dragging moves the view; once the view is moved so,
+    it stays as it is instead of being fitted to the tracks, until reset_view() or a double click."""
+    BINS = 24   # speed colours
+    ZOOM = (10.0, 50_000.0)  # m: the view zoomed by hand shows at least / at most this much across
+
+    def __init__(self, interactive=False):
         super().__init__(axes=False)
+        self.interactive = interactive
+        self.fit = None  # (x range, y range) that shows every track, see set_tracks
+        self.user_view = False  # the view was zoomed or moved by hand
         self.setMinimumHeight(MIN_HEIGHT)
         self.setAspectLocked(True)
         pi = self.getPlotItem()
@@ -330,6 +537,51 @@ class MapChart(BaseChart):
         self.markers = pg.ScatterPlotItem(size=12, pen=pg.mkPen(theme.BG, width=2))
         self.addItem(self.markers)
         self.markers.setZValue(10)  # above the tracks
+        self.backdrop = None  # the game map under the tracks, see set_backdrop
+        if interactive:
+            pi.setMouseEnabled(True, True)
+            lo, hi = self.ZOOM
+            pi.vb.setLimits(minXRange=lo, maxXRange=hi, minYRange=lo, maxYRange=hi)
+            pi.vb.sigRangeChangedManually.connect(self.moved_by_hand)
+
+    def moved_by_hand(self, *_):
+        self.user_view = True
+
+    def set_backdrop(self, world_map):
+        """Show a world_map.WorldMap under the tracks, or none (None)."""
+        if (self.backdrop.map if self.backdrop is not None else None) is world_map:
+            return
+        if self.backdrop is not None:
+            self.removeItem(self.backdrop)
+            self.backdrop = None
+        if world_map is not None:
+            self.backdrop = MapImage(world_map)
+            self.addItem(self.backdrop, ignoreBounds=True)
+
+    def reset_view(self):
+        """Fit the view to the tracks again, and keep doing so as they change."""
+        self.user_view = False
+        if self.fit:
+            self.setRange(xRange=self.fit[0], yRange=self.fit[1], padding=0)
+
+    def wheelEvent(self, ev):
+        if self.interactive:
+            # at a limit the view box no longer scales but still moves about the pointer at every step, so
+            # turning on past it would carry the view off the tracks
+            (x0, x1), (y0, y1) = self.viewRange()
+            lo, hi = self.ZOOM
+            d = ev.angleDelta().y() or ev.angleDelta().x()
+            if (d > 0 and min(x1 - x0, y1 - y0) <= lo * 1.001) or (d < 0 and max(x1 - x0, y1 - y0) >= hi * 0.999):
+                ev.accept()
+                return
+            pg.PlotWidget.wheelEvent(self, ev)  # the view box zooms
+        else:
+            super().wheelEvent(ev)
+
+    def mouseDoubleClickEvent(self, ev):
+        if self.interactive:
+            self.reset_view()
+        super().mouseDoubleClickEvent(ev)
 
     _speed_colors = None
 
@@ -340,23 +592,9 @@ class MapChart(BaseChart):
             cls._speed_colors = [speed_color((b + 0.5) * 250 / cls.BINS) for b in range(cls.BINS)]
         return cls._speed_colors
 
-    def fade_levels(self, x, y, fade, fade_max):
-        """Per segment, its step of opacity: 0 (almost gone) at the tail up to ALPHAS - 1 (solid) once fade of
-        the track's length (at most fade_max metres) is behind."""
-        top = self.ALPHAS - 1
-        seg = np.hypot(np.diff(x), np.diff(y))
-        if not fade:
-            return np.full(len(seg), top)
-        d = np.cumsum(seg) - seg / 2  # distance from the tail to each segment's middle
-        span = min(d[-1] * fade, fade_max or math.inf)
-        if span <= 0:
-            return np.full(len(seg), top)
-        return np.clip((d / span * self.ALPHAS).astype(int), 0, top)
-
     def set_tracks(self, tracks, markers=(), area=None):
-        """tracks: [dict(x, y, color=None | speeds=array, width, fade=share of the length to fade at the start,
-        fade_max=metres)]; markers: [(x, y, color)]; area: (xs, ys) the view is fitted to instead of the
-        tracks, so it holds still while they grow (a replay)."""
+        """tracks: [dict(x, y, color=None | speeds=array, width)]; markers: [(x, y, color)]; area: (xs, ys) the
+        view is fitted to instead of the tracks, so it holds still while they grow (a replay)."""
         lines = []  # [(pen, QPolygonF)], in the order the tracks come
         allx, ally = [], []
         widest = 0.0
@@ -370,25 +608,17 @@ class MapChart(BaseChart):
             ally.append(y)
             width = tr.get("width", 3)
             widest = max(widest, width)
-            level = self.fade_levels(x, y, tr.get("fade"), tr.get("fade_max"))
             if tr.get("speeds") is not None:
                 v = np.nan_to_num(np.asarray(tr["speeds"], float)[keep][1:])
-                b = np.clip((v / 250 * self.BINS).astype(int), 0, self.BINS - 1)
+                key = np.clip((v / 250 * self.BINS).astype(int), 0, self.BINS - 1)
             else:
-                b = np.zeros(len(level), int)
-            key = b * self.ALPHAS + level
-            # runs of consecutive segments in the same pen, each drawn as polylines
+                key = np.zeros(len(x) - 1, int)
+            # runs of consecutive segments in the same colour, each drawn as polylines
             cut = np.flatnonzero(np.diff(key)) + 1
             sx, sy = y, x  # screen order: game +Y right, +X up
             for a, z in zip(np.r_[0, cut], np.r_[cut, len(key)]):
-                bin_, lv = divmod(int(key[a]), self.ALPHAS)
-                c = QColor(self.speed_colors()[bin_] if tr.get("speeds") is not None else tr["color"])
-                if lv < self.ALPHAS - 1:
-                    c.setAlphaF(((lv + 0.5) / self.ALPHAS) ** 1.5)
-                    cap = Qt.FlatCap  # round caps would overlap the next run into darker beads
-                else:
-                    cap = Qt.RoundCap
-                pn = pen(c, width, cap)
+                c = self.speed_colors()[key[a]] if tr.get("speeds") is not None else tr["color"]
+                pn = pen(c, width, Qt.RoundCap)
                 for i in range(a, z, Tracks.CHUNK):  # segments i..j-1 are points i..j
                     j = min(i + Tracks.CHUNK, z)
                     lines.append((pn, fn.arrayToQPolygonF(sx[i:j + 1], sy[i:j + 1])))
@@ -403,16 +633,17 @@ class MapChart(BaseChart):
             allx, ally = [np.asarray(area[0], float)], [np.asarray(area[1], float)]
         self.scale.active = bool(allx)
         self.scale.update()
-        if not allx:
-            self.setRange(xRange=(-1, 1), yRange=(-1, 1), padding=0)
-            self.show_empty(True)
-            return
-        self.show_empty(False)
-        X, Y = np.concatenate(allx), np.concatenate(ally)
-        span = max(X.max() - X.min(), Y.max() - Y.min(), 20)
-        cx, cy = (Y.max() + Y.min()) / 2, (X.max() + X.min()) / 2
-        h = span / 2 * 1.08
-        self.setRange(xRange=(cx - h, cx + h), yRange=(cy - h, cy + h), padding=0)
+        self.show_empty(not allx)
+        if allx:
+            X, Y = np.concatenate(allx), np.concatenate(ally)
+            span = max(X.max() - X.min(), Y.max() - Y.min(), 20)
+            cx, cy = (Y.max() + Y.min()) / 2, (X.max() + X.min()) / 2
+            h = span / 2 * 1.08
+            self.fit = ((cx - h, cx + h), (cy - h, cy + h))
+        else:
+            self.fit = ((-1, 1), (-1, 1))
+        if not self.user_view:  # a view zoomed or moved by hand stays
+            self.setRange(xRange=self.fit[0], yRange=self.fit[1], padding=0)
 
     def set_markers(self, markers):
         """markers: [(x, y, color)], e.g. where each run is at the hover point."""

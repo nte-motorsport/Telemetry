@@ -18,17 +18,26 @@ class RaceRecorder(QObject):
         self.store = store
         self.enabled = enabled
         self.active = False
+        self.world = ""  # the game world (UE level path) as last known
 
     def set_enabled(self, on):
         self.enabled = on
         if not on:
             self.finish()
 
+    def set_world(self, level):
+        self.world = level
+        if self.active and level and not self.level:
+            # the race's world: the first one known while it goes on. Not a later one: the next world is named
+            # a moment before the teleport into it ends the race
+            self.level = level
+
     def start(self, now):
         self.active = True
         self.t0 = now
         self.started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.me, self.rivals, self.last_t = [], {}, {}
+        self.level = self.world
         self.last_rival = now
         self.recording.emit(True)
 
@@ -69,6 +78,9 @@ class RaceRecorder(QObject):
         if duration < self.MIN_LENGTH:
             return
         shift = lambda rows: [[round(r[0] - t_lo, 3), *r[1:]] for r in rows]  # start the replay at 0
-        path = self.store.save(dict(version=1, started=self.started, duration=round(duration, 3),
-                                    me=shift(self.me), rivals={k: shift(v) for k, v in self.rivals.items()}))
+        replay = dict(version=1, started=self.started, duration=round(duration, 3),
+                      me=shift(self.me), rivals={k: shift(v) for k, v in self.rivals.items()})
+        if self.level:
+            replay["level"] = self.level
+        path = self.store.save(replay)
         self.saved.emit(path)
