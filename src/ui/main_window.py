@@ -61,8 +61,10 @@ class MainWindow(QMainWindow):
         self.switch(LIVE)
 
         t = QTimer(self)
-        t.timeout.connect(lambda: self.pages.currentWidget().render())
-        t.start(33)
+        # at most 20 frames a second: the game sends a car's position 10-15 times a second, so more would only
+        # redraw the same data shifted along the time axis; nothing is drawn while the window is minimized
+        t.timeout.connect(lambda: self.isMinimized() or self.pages.currentWidget().render())
+        t.start(50)
         t2 = QTimer(self)
         t2.timeout.connect(self.live.tick)
         t2.timeout.connect(self.multiplayer.tick)

@@ -55,13 +55,9 @@ def peak_thin(xs, ys, x0, x1, columns):
 
 class FastCurve(pg.PlotCurveItem):
     """A curve drawn as short polylines. Qt strokes one long antialiased path that keeps crossing itself
-    (noisy G data, a lap on the map) very slowly; short pieces draw many times faster and look the same."""
+    (noisy G data, a lap on the map) very slowly; short pieces draw many times faster and look the same.
+    Not cached as an image: the live curves change with every frame, so a cache would only be redrawn."""
     CHUNK = 64
-
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        # kept as an image until the data changes, so repainting around it costs nothing
-        self.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
 
     def paint(self, p, *args):
         x, y = self.xData, self.yData
@@ -69,11 +65,6 @@ class FastCurve(pg.PlotCurveItem):
             return
         p.setRenderHint(QPainter.RenderHint.Antialiasing, self.opts["antialias"])
         p.setPen(self.opts["pen"])
-        if self.opts["connect"] == "pairs":
-            n = len(x) // 2 * 2
-            for i in range(0, n, 2 * self.CHUNK):
-                p.drawLines(fn.arrayToQPolygonF(x[i:min(i + 2 * self.CHUNK, n)], y[i:min(i + 2 * self.CHUNK, n)]))
-            return
         # unbroken runs of finite points; a NaN leaves a gap, as connect="finite" does
         idx = np.flatnonzero(np.isfinite(x) & np.isfinite(y))
         if not len(idx):
@@ -83,6 +74,64 @@ class FastCurve(pg.PlotCurveItem):
             for i in range(a, b - 1, self.CHUNK):
                 j = min(i + self.CHUNK + 1, b)
                 p.drawPolyline(fn.arrayToQPolygonF(x[i:j], y[i:j]))
+
+
+_pens = {}
+
+
+def pen(color, width, cap):
+    """One shared pen per style: the map asks for the same few dozen every frame."""
+    c = QColor(color)
+    key = (c.rgba(), width, cap)
+    p = _pens.get(key)
+    if p is None:
+        p = _pens[key] = pg.mkPen(c, width=width)
+        p.setCapStyle(cap)
+        p.setJoinStyle(Qt.RoundJoin)
+    return p
+
+
+class Tracks(pg.GraphicsObject):
+    """The map's tracks as short polylines in many pens, all drawn by one item. A track comes in up to
+    BINS x ALPHAS pens (speed colours, steps of a fading tail): one pyqtgraph item per pen costs more in
+    bookkeeping each frame than the drawing itself, and drawing each segment on its own (with its own two
+    round caps) costs several times what a polyline through the same points does."""
+    CHUNK = 64  # segments per polyline at most, as FastCurve's short pieces
+
+    def __init__(self):
+        super().__init__()
+        self.lines = []  # [(pen, QPolygonF)], drawn in this order
+        self.rect = QRectF()  # of the data
+        self.pad = 0.0  # px: half the widest pen
+        self.bounds = None
+
+    def set_lines(self, lines, rect, pad):
+        self.prepareGeometryChange()
+        self.lines, self.rect, self.pad, self.bounds = lines, rect, pad, None
+        self.update()
+
+    def viewTransformChanged(self):
+        # the pens' widths are in pixels, so the bounds in data units change with the zoom
+        super().viewTransformChanged()
+        self.prepareGeometryChange()
+        self.bounds = None
+
+    def boundingRect(self):
+        if self.bounds is None:
+            if not self.lines:
+                self.bounds = QRectF()
+            else:
+                vx, vy = self.pixelVectors()
+                px = math.hypot(vx.x(), vx.y()) * self.pad if vx is not None else 0.0
+                py = math.hypot(vy.x(), vy.y()) * self.pad if vy is not None else 0.0
+                self.bounds = self.rect.adjusted(-px, -py, px, py)
+        return self.bounds
+
+    def paint(self, p, *args):
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        for pn, poly in self.lines:
+            p.setPen(pn)
+            p.drawPolyline(poly)
 
 
 def nice_step(span, n):
@@ -276,17 +325,20 @@ class MapChart(BaseChart):
         pi.setAxisItems({"bottom": self.scale})
         pi.showAxis("bottom")
         self.axes_below()
-        self.layers = []
+        self.tracks = Tracks()
+        self.addItem(self.tracks)
         self.markers = pg.ScatterPlotItem(size=12, pen=pg.mkPen(theme.BG, width=2))
         self.addItem(self.markers)
-        self.markers.setZValue(10)  # above the tracks, which are added later
+        self.markers.setZValue(10)  # above the tracks
 
-    def _layer(self, i):
-        while len(self.layers) <= i:
-            it = FastCurve(connect="pairs")
-            self.addItem(it)
-            self.layers.append(it)
-        return self.layers[i]
+    _speed_colors = None
+
+    @classmethod
+    def speed_colors(cls):
+        """The colour of each speed bin, at its middle."""
+        if cls._speed_colors is None:
+            cls._speed_colors = [speed_color((b + 0.5) * 250 / cls.BINS) for b in range(cls.BINS)]
+        return cls._speed_colors
 
     def fade_levels(self, x, y, fade, fade_max):
         """Per segment, its step of opacity: 0 (almost gone) at the tail up to ALPHAS - 1 (solid) once fade of
@@ -305,8 +357,9 @@ class MapChart(BaseChart):
         """tracks: [dict(x, y, color=None | speeds=array, width, fade=share of the length to fade at the start,
         fade_max=metres)]; markers: [(x, y, color)]; area: (xs, ys) the view is fitted to instead of the
         tracks, so it holds still while they grow (a replay)."""
-        used = 0
+        lines = []  # [(pen, QPolygonF)], in the order the tracks come
         allx, ally = [], []
+        widest = 0.0
         for tr in tracks:
             x, y = np.asarray(tr["x"], float), np.asarray(tr["y"], float)
             if len(x) < 2:
@@ -315,6 +368,8 @@ class MapChart(BaseChart):
             x, y = x[keep], y[keep]
             allx.append(x)
             ally.append(y)
+            width = tr.get("width", 3)
+            widest = max(widest, width)
             level = self.fade_levels(x, y, tr.get("fade"), tr.get("fade_max"))
             if tr.get("speeds") is not None:
                 v = np.nan_to_num(np.asarray(tr["speeds"], float)[keep][1:])
@@ -322,26 +377,27 @@ class MapChart(BaseChart):
             else:
                 b = np.zeros(len(level), int)
             key = b * self.ALPHAS + level
-            for k in np.unique(key):
-                idx = np.nonzero(key == k)[0]
-                sx = np.empty(len(idx) * 2)
-                sy = np.empty(len(idx) * 2)
-                sx[0::2], sx[1::2] = y[idx], y[idx + 1]
-                sy[0::2], sy[1::2] = x[idx], x[idx + 1]
-                bin_, lv = divmod(int(k), self.ALPHAS)
-                c = QColor(speed_color((bin_ + 0.5) * 250 / self.BINS) if tr.get("speeds") is not None
-                           else tr["color"])
-                pen = pg.mkPen(c, width=tr.get("width", 3))
+            # runs of consecutive segments in the same pen, each drawn as polylines
+            cut = np.flatnonzero(np.diff(key)) + 1
+            sx, sy = y, x  # screen order: game +Y right, +X up
+            for a, z in zip(np.r_[0, cut], np.r_[cut, len(key)]):
+                bin_, lv = divmod(int(key[a]), self.ALPHAS)
+                c = QColor(self.speed_colors()[bin_] if tr.get("speeds") is not None else tr["color"])
                 if lv < self.ALPHAS - 1:
                     c.setAlphaF(((lv + 0.5) / self.ALPHAS) ** 1.5)
-                    pen.setColor(c)
-                    pen.setCapStyle(Qt.FlatCap)  # round caps would overlap into darker beads
+                    cap = Qt.FlatCap  # round caps would overlap the next run into darker beads
                 else:
-                    pen.setCapStyle(Qt.RoundCap)
-                self._layer(used).setData(sx, sy, pen=pen)
-                used += 1
-        for it in self.layers[used:]:
-            it.setData([], [])
+                    cap = Qt.RoundCap
+                pn = pen(c, width, cap)
+                for i in range(a, z, Tracks.CHUNK):  # segments i..j-1 are points i..j
+                    j = min(i + Tracks.CHUNK, z)
+                    lines.append((pn, fn.arrayToQPolygonF(sx[i:j + 1], sy[i:j + 1])))
+        if allx:
+            X, Y = np.concatenate(allx), np.concatenate(ally)
+            self.tracks.set_lines(lines, QRectF(Y.min(), X.min(), Y.max() - Y.min(), X.max() - X.min()),
+                                  widest / 2 + 1)
+        else:
+            self.tracks.set_lines([], QRectF(), 0)
         self.set_markers(markers)
         if area is not None and len(area[0]):
             allx, ally = [np.asarray(area[0], float)], [np.asarray(area[1], float)]
@@ -375,6 +431,24 @@ class GGChart(BaseChart):
         self.deco = []
         self.scatters = []
         self.mx = None
+        self.fade_styles = {}  # (colour, n) -> fade_style()
+
+    def fade_style(self, color, n):
+        """Brushes and sizes of n dots that fade in from the oldest, the newest one big. The same n comes
+        every frame, so they are made once."""
+        key = (color.rgba(), n)
+        style = self.fade_styles.get(key)
+        if style is None:
+            brushes = []
+            for i in range(n):
+                cc = QColor(color)
+                # a few fixed steps, so pyqtgraph draws each dot style once and reuses it
+                cc.setAlphaF(round(0.15 + 0.85 * (i + 1) / n, 1))
+                brushes.append(brush(cc))
+            sizes = np.full(n, 5.0)
+            sizes[-1] = 12
+            style = self.fade_styles[key] = (brushes, sizes)
+        return style
 
     def _frame(self, mx):
         if mx == self.mx:
@@ -433,13 +507,7 @@ class GGChart(BaseChart):
             n = len(ga)
             c = QColor(s["color"])
             if s.get("fade") and n:
-                brushes, sizes = [], []
-                for i in range(n):
-                    cc = QColor(c)
-                    # a few fixed steps, so pyqtgraph draws each dot style once and reuses it
-                    cc.setAlphaF(round(0.15 + 0.85 * (i + 1) / n, 1))
-                    brushes.append(brush(cc))
-                    sizes.append(12 if i == n - 1 else 5)
+                brushes, sizes = self.fade_style(c, n)
                 sc.setData(-ga, gl, brush=brushes, size=sizes)
             else:
                 c.setAlphaF(0.55)
