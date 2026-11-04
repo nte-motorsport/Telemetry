@@ -3,7 +3,7 @@ Display: which charts the Live page shows and in what order. Network: the interf
 online races. Plugins: the map packs."""
 import os
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QMessageBox, QStackedWidget,
                                QVBoxLayout, QWidget)
 
@@ -146,6 +146,29 @@ class SettingsPage(QWidget):
         self.auto_record.setChecked(self.prefs.option("auto_record"))
         self.auto_record.toggled.connect(lambda on: self.prefs.set_option("auto_record", on))
         pl.addWidget(self.auto_record)
+
+        p, rl = panel()
+        rl.addWidget(label("Raw traffic", "sectionTitle"))
+        self.raw_traffic = QCheckBox("Also save the raw network traffic of each recorded race")
+        self.raw_traffic.setChecked(self.prefs.option("raw_traffic"))
+        self.raw_traffic.toggled.connect(lambda on: self.prefs.set_option("raw_traffic", on))
+        rl.addWidget(self.raw_traffic)
+        rl.addWidget(label("Every packet the capture sees while a race is recorded is saved next to its replay, "
+                           "as a .pcap.gz file that Wireshark opens, for working out more of what the game sends. "
+                           "Replays that have it say \"raw traffic\" in the list; deleting a replay deletes it too.",
+                           "muted", wrap=True))
+        warn = label(f'<span style="color:{theme.DANGER}">Be careful with these files.</span> They are not just '
+                     "the game's traffic but everything this computer's network connection carried during the "
+                     "race: other apps, the browser, chats, downloads. Whatever of it went unencrypted is in "
+                     "there as it was, and that can be private: addresses, names, messages, logins. Don't share "
+                     "these files, or replay folders that hold them, with anyone you wouldn't show that to.",
+                     "muted", wrap=True)
+        warn.setTextFormat(Qt.RichText)
+        rl.addWidget(warn)
+        v.addWidget(p)
+        # only races that are recorded get their traffic saved
+        self.raw_traffic.setEnabled(self.auto_record.isChecked())
+        self.auto_record.toggled.connect(self.raw_traffic.setEnabled)
         v.addStretch()
         return body
 

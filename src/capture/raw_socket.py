@@ -51,8 +51,9 @@ class RawCapture:
             pass
         self.sock.close()
 
-    def packets(self, stop=lambda: False):
-        """Yield (src_port, dst_port, payload) until stop() returns True."""
+    def packets(self, stop=lambda: False, tap=lambda: None):
+        """Yield (src_port, dst_port, payload) until stop() returns True. tap() may return a pcap.PcapWriter,
+        which gets every packet as it came in, whatever it is (the raw traffic of a race)."""
         while not stop():
             try:
                 pkt = self.sock.recv(65535)
@@ -62,6 +63,9 @@ class RawCapture:
                 if stop():
                     return
                 raise
+            w = tap()
+            if w is not None:
+                w.write(pkt)
             if len(pkt) < 28 or pkt[0] >> 4 != 4 or pkt[9] != 17:  # IPv4 + UDP only
                 continue
             ihl = (pkt[0] & 0x0F) * 4
