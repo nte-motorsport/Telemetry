@@ -5,7 +5,8 @@ of, and the world the server names (capture/levels.py) picks the pack.
 A pack is a .ntemap file (a zip, its entries stored as they are) or, for making one, a folder with the same in
 it; tools/build_map.py makes packs from the game's map tiles:
 
-  map.json                  {"level": the game world (UE level path), as the server names it,
+  map.json                  {"level": the game world (UE level path) as the server names it, or a list
+                             of them (a track's race level and the copy of it the test drive uses),
                              "title": a name to show (the file's name if left out),
                              "grid": [columns, rows], "tile": tile size in px,
                              "pixel_to_world": [[a, b, c], [d, e, f]],   world x = a*u + b*v + c,
@@ -19,6 +20,7 @@ import json
 import math
 import os
 import zipfile
+import zlib
 from collections import OrderedDict
 
 import numpy as np
@@ -39,26 +41,52 @@ def maps_dir():
 
 
 class Pack:
-    """The files of a pack, read by name: from a .ntemap file or a folder."""
+    """The files of a pack, read by name: from a .ntemap file or a folder. A .ntemap is not kept open: its
+    table of contents is read once and each file read with the file opened just for it, so a pack can be
+    rebuilt or replaced while the app runs (Windows won't let a file that is open be). If the file changed
+    since, its table is read again."""
 
     def __init__(self, path):
         self.path = path
-        self.zip = zipfile.ZipFile(path) if os.path.isfile(path) else None
+        self.entries = None  # name -> ZipInfo, for a .ntemap
+        self.stamp = None
+        if os.path.isfile(path):
+            self.load_toc()
+
+    def load_toc(self):
+        with zipfile.ZipFile(self.path) as z:
+            self.entries = {i.filename: i for i in z.infolist()}
+        st = os.stat(self.path)
+        self.stamp = (st.st_mtime_ns, st.st_size)
 
     def read(self, name):
         """The bytes of a file in the pack, or None."""
         try:
-            if self.zip is not None:
-                return self.zip.read(name)
-            with open(os.path.join(self.path, *name.split("/")), "rb") as f:
-                return f.read()
-        except (KeyError, OSError):
+            if self.entries is None:
+                with open(os.path.join(self.path, *name.split("/")), "rb") as f:
+                    return f.read()
+            st = os.stat(self.path)
+            if (st.st_mtime_ns, st.st_size) != self.stamp:
+                self.load_toc()
+            info = self.entries.get(name)
+            if info is None:
+                return None
+            with open(self.path, "rb") as f:
+                f.seek(info.header_offset)
+                head = f.read(30)  # the local header: its name and extra field lengths are at 26
+                skip = int.from_bytes(head[26:28], "little") + int.from_bytes(head[28:30], "little")
+                f.seek(info.header_offset + 30 + skip)
+                data = f.read(info.compress_size)
+            if info.compress_type == zipfile.ZIP_DEFLATED:
+                data = zlib.decompress(data, -15)
+            elif info.compress_type != zipfile.ZIP_STORED:
+                return None
+            return data
+        except (OSError, zipfile.BadZipFile, zlib.error):
             return None
 
     def close(self):
-        if self.zip is not None:
-            self.zip.close()
-            self.zip = None
+        """Nothing is held open; kept for the callers that let go of a pack before replacing it."""
 
 
 class WorldMap:
@@ -69,7 +97,8 @@ class WorldMap:
         self.pack = pack
         self.file = os.path.basename(pack.path)
         self.name = meta.get("title") or os.path.splitext(self.file)[0]
-        self.level = meta.get("level")
+        worlds = meta.get("level") or []
+        self.worlds = [worlds] if isinstance(worlds, str) else [w for w in worlds if isinstance(w, str)]
         self.cols, self.rows = meta["grid"]
         self.tile = meta["tile"]
         self.levels = meta.get("levels", 1)
@@ -246,8 +275,7 @@ class MapPicker:
 
     def of_level(self, level):
         """The map of a world, or None."""
-        return next((m for m in self.maps if m.level and (level == m.level or level.startswith(m.level + "/"))),
-                    None)
+        return next((m for m in self.maps if any(level == w or level.startswith(w + "/") for w in m.worlds)), None)
 
     def set_level(self, level):
         """The world the game is in ("" when not known): its map, if there is one, is the one from now on."""
