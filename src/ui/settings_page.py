@@ -215,7 +215,7 @@ class SettingsPage(QWidget):
             p, pl = panel()
             pl.setSpacing(2)
             pl.addWidget(label(m.name, "listTitle"))
-            world = m.level.rsplit("/", 1)[-1] if m.level else "none given: told by its roads"
+            world = ", ".join(w.rsplit("/", 1)[-1] for w in m.worlds) or "none given: told by its roads"
             size = os.path.getsize(m.pack.path) / 1e6 if os.path.isfile(m.pack.path) else None
             details = f"World: {world}   ·   {m.file}" + (f"   ·   {size:.0f} MB" if size else "")
             pl.addWidget(label(details, "muted"))

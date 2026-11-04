@@ -3,10 +3,15 @@
     python tools/build_map.py <source folder> [<out .ntemap>]
 
 The source folder holds the game's tiles (PNG, numbered left to right, top to bottom) and map.json:
-  {"level": the game world (UE level path) the server names; the app's status bar shows its last part,
+  {"level": the game world (UE level path) the server names, or a list of them; the app's status bar shows
+            its last part,
    "title": a name to show (optional),
    "grid": [columns, rows], "tile": tile size in px,
-   "pixel_to_world": [[a, b, c], [d, e, f]] (tools/align_map.py places the map and writes this),
+   where it lies, either as the game has it (its DT_LevelMiniMap table: MiniMapCenterLocation and
+   MiniMapEdgeSize, in cm there, in metres here):
+   "centre": [x, y], "edge": the side of the square the tiles cover,
+   or as tools/align_map.py places it by hand, which wins if both are there:
+   "pixel_to_world": [[a, b, c], [d, e, f]],
    "road_min": grey level from which a pixel counts as road (45 if left out)}
 The pack gets the tiles as they are, each half size down to one tile, and the roads mask. Without <out> it goes
 to the app's maps folder, %APPDATA%\\NTE Telemetry\\maps, named after the source folder.
@@ -41,6 +46,11 @@ def main(src, out=None):
         print("note: map.json has no \"level\": the app can then tell the map only by its roads")
     cols, rows = meta["grid"]
     tile = meta["tile"]
+    if "pixel_to_world" not in meta:
+        # the game's placement: a square of side edge around centre, the tiles' first row at the top (least y)
+        (cx, cy), edge = meta["centre"], meta["edge"]
+        px = edge / (cols * tile)
+        meta["pixel_to_world"] = [[px, 0.0, cx - edge / 2], [0.0, edge / (rows * tile), cy - edge / 2]]
     files = sorted((f for f in os.listdir(src) if f.lower().endswith(".png")),
                    key=lambda f: int(re.findall(r"\d+", f)[-1]))
     (a, b, _), (c, d, _) = meta["pixel_to_world"]
