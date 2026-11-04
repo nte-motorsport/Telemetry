@@ -153,8 +153,9 @@ class SettingsPage(QWidget):
         self.raw_traffic.setChecked(self.prefs.option("raw_traffic"))
         self.raw_traffic.toggled.connect(lambda on: self.prefs.set_option("raw_traffic", on))
         rl.addWidget(self.raw_traffic)
-        rl.addWidget(label("Every packet the capture sees while a race is recorded is saved next to its replay, "
-                           "as a .pcap.gz file that Wireshark opens, for working out more of what the game sends. "
+        rl.addWidget(label("Every packet the capture sees while a race is recorded, and in the 30 seconds before "
+                           "it (kept in memory only, until a race starts), is saved next to its replay, as a "
+                           ".pcap.gz file that Wireshark opens, for working out more of what the game sends. "
                            "Replays that have it say \"raw traffic\" in the list; deleting a replay deletes it too.",
                            "muted", wrap=True))
         warn = label(f'<span style="color:{theme.DANGER}">Be careful with these files.</span> They are not just '

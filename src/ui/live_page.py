@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, QHBoxLayout, QL
 
 import windows
 from capture.live_source import LiveSource
+from capture.pcap import RawTap
 from capture.raw_socket import default_ip, local_ips
 from ui import charts, theme
 from ui.world_map import MapPicker, all_maps
@@ -111,7 +112,7 @@ class LivePage(QWidget):
         self.maps = MapPicker(all_maps())
         self.map_at = -1e9  # when the map was last looked at
         self.level = ""  # the game world, as the server names it
-        self.tap = None  # where the capture writes the raw traffic, see set_tap
+        self.raw = None  # a pcap.RawTap the capture gives every packet to while raw traffic is wanted, see set_raw
         self.c_gg = charts.GGChart()
         self.c_z = charts.LineChart(xfmt)
         self.c_yaw = charts.LineChart(xfmt, sym=10)
@@ -171,7 +172,7 @@ class LivePage(QWidget):
         self.source.rivals.connect(self.rivals)
         self.source.failed.connect(self.on_failed)
         self.source.level.connect(self.on_level)
-        self.source.tap = self.tap
+        self.source.tap = self.raw
         self.source.start()
         self.tick()
 
@@ -205,12 +206,23 @@ class LivePage(QWidget):
         self.dirty = True
         self.driving.emit(d)
 
-    def set_tap(self, writer):
-        """Give every captured packet to writer (a pcap.PcapWriter), or stop (None); a capture started again
-        (another network chosen) carries on with it."""
-        self.tap = writer
+    def set_raw(self, on):
+        """Keep the last RawTap.SPAN s of raw traffic in memory, for a race's recording to start with, or not
+        (and forget what was kept). A capture started again (another network chosen) carries on with it."""
+        if on and self.raw is None:
+            self.raw = RawTap()
+        elif not on:
+            self.raw = None
         if self.source:
-            self.source.tap = writer
+            self.source.tap = self.raw
+
+    def set_tap(self, writer):
+        """Write the raw traffic into writer (a pcap.PcapWriter), the kept seconds first; None: stop."""
+        if writer is not None:
+            self.set_raw(True)
+            self.raw.attach(writer)
+        elif self.raw is not None:
+            self.raw.detach()
 
     def on_level(self, level):
         self.level = level

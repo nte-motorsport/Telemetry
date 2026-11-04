@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         store = replays or ReplayStore()
         self.recorder = RaceRecorder(store, self.prefs.option("auto_record"), self.prefs.option("raw_traffic"))
         self.recorder.tap.connect(self.live.set_tap)
+        self.live.set_raw(self.raw_wanted())
         self.live.driving.connect(self.recorder.on_own)
         self.live.rivals.connect(self.recorder.on_rivals)
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
@@ -141,10 +142,15 @@ class MainWindow(QMainWindow):
         if key == "options":
             self.recorder.set_enabled(self.prefs.option("auto_record"))
             self.recorder.set_raw(self.prefs.option("raw_traffic"))
+            self.live.set_raw(self.raw_wanted())
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:
             self.live.set_charts(self.prefs.shown(key))
+
+    def raw_wanted(self):
+        """Raw traffic is kept for races to be recorded with: only while both are on."""
+        return self.prefs.option("auto_record") and self.prefs.option("raw_traffic")
 
     def closeEvent(self, ev):
         self.live.stop()
