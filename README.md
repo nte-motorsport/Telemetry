@@ -27,7 +27,7 @@ Produces `dist\NTE Telemetry.exe`: a single file that asks for administrator rig
 ## Maps
 
 The game's map can lie under the tracks on the Live, Multiplayer and Replays pages. Maps are plug-ins, not part
-of the app: map packs (`.ntemap`) in `%APPDATA%\NTE Telemetry\maps`, installed from Settings > Maps or copied
+of the app: map packs (`.ntemap`) in `%APPDATA%\NTE Telemetry\maps`, installed from Settings > Plugins or copied
 there by hand. Each pack says which game world it is the map of; the app reads the world from the game's
 traffic and shows that world's map, if a pack for it is installed.
 

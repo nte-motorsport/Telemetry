@@ -2,8 +2,9 @@
 import math
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap
-from PySide6.QtWidgets import QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPixmap
+from PySide6.QtWidgets import (QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ui import theme
 
@@ -140,6 +141,59 @@ class ChartGrid(QWidget):
         for i, k in enumerate(keys):
             self.grid.addWidget(self.cards[k], i // cols, i % cols)
             self.cards[k].show()
+
+
+def row_height():
+    """A list row: the title and the details line under it, list_row's margins, and the list item's padding and
+    border (8 and 2 px) and the GAP under it (from the style sheet), which the row widget is placed inside."""
+    return (QFontMetrics(theme.font(theme.FS_LG)).height() + QFontMetrics(theme.font(theme.FS_MD)).height() + 2
+            + 2 * 4 + 2 * (8 + 2) + theme.GAP)
+
+
+def list_row(title, details):
+    """A row of a RowList: the title in the site font, a muted line under it. Drawn over the list item, which
+    keeps the hover and selection look; its labels turn dark on the selected (yellow) one."""
+    w = QWidget()
+    w.setProperty("role", "raceRow")
+    w.setAttribute(Qt.WA_TransparentForMouseEvents)
+    v = QVBoxLayout(w)
+    v.setContentsMargins(6, 4, 6, 4)
+    v.setSpacing(2)
+    v.addWidget(label(title, "listTitle"))
+    v.addWidget(label(details, "muted"))
+    return w
+
+
+class RowList(QListWidget):
+    """A list of list_row rows in the site style (the Replays races, the Settings sections); the selected one is
+    the accent, with dark text."""
+
+    def __init__(self):
+        super().__init__()
+        self.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.currentRowChanged.connect(self.mark_selected)
+
+    def add_row(self, title, details, data=None):
+        it = QListWidgetItem()
+        it.setData(Qt.UserRole, data)
+        it.setSizeHint(QSize(0, row_height()))
+        self.addItem(it)
+        self.setItemWidget(it, list_row(title, details))
+        return it
+
+    def set_details(self, row, details):
+        """Change the muted line of a row."""
+        w = self.itemWidget(self.item(row))
+        w.findChildren(QLabel)[1].setText(details)
+
+    def mark_selected(self, row=None):
+        """Dark text on the selected row, whose background is the accent."""
+        for i in range(self.count()):
+            w = self.itemWidget(self.item(i))
+            w.setProperty("sel", i == self.currentRow())
+            for x in [w] + w.findChildren(QWidget):
+                x.style().unpolish(x)
+                x.style().polish(x)
 
 
 def scroll(widget):
