@@ -7,14 +7,13 @@ import time
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QListWidget, QListWidgetItem, QMessageBox, QSizePolicy, QSlider,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout, QWidget
 
 from ui import charts, theme
 from ui.multiplayer_page import WINDOW, rival_color, segments
-from ui.widgets import Button, card, label, panel
+from ui.widgets import Button, RowList, card, label, panel
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -24,27 +23,6 @@ NUDGE = 0.1  # s the arrow keys step the timeline by
 def clock(s):
     s = max(0, int(s))
     return f"{s // 60}:{s % 60:02d}"
-
-
-def row_height():
-    """A list row: the date and the details line under it, race_row's margins, and the list item's padding and
-    border (8 and 2 px) and the GAP under it (from the style sheet), which the row widget is placed inside."""
-    return (QFontMetrics(theme.font(theme.FS_LG)).height() + QFontMetrics(theme.font(theme.FS_MD)).height() + 2
-            + 2 * 4 + 2 * (8 + 2) + theme.GAP)
-
-
-def race_row(when, details):
-    """A row of the list: the date in the site font, the length and the field under it. Drawn over the list
-    item, which keeps the hover and selection look; its labels turn dark on the selected (yellow) one."""
-    w = QWidget()
-    w.setProperty("role", "raceRow")
-    w.setAttribute(Qt.WA_TransparentForMouseEvents)
-    v = QVBoxLayout(w)
-    v.setContentsMargins(6, 4, 6, 4)
-    v.setSpacing(2)
-    v.addWidget(label(when, "listTitle"))
-    v.addWidget(label(details, "muted"))
-    return w
 
 
 class CarChip(QFrame):
@@ -126,9 +104,7 @@ class ReplaysPage(QWidget):
         ll.addWidget(label("Races", "sectionTitle"))
         self.empty = label("", "muted", wrap=True)
         ll.addWidget(self.empty)
-        self.list = QListWidget()
-        self.list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
-        self.list.currentRowChanged.connect(self.mark_selected)
+        self.list = RowList()
         self.list.currentRowChanged.connect(self.open_row)
         ll.addWidget(self.list, 1)
         btns = QHBoxLayout()
@@ -206,13 +182,8 @@ class ReplaysPage(QWidget):
         for path, m in self.store.list():
             when = datetime.datetime.fromisoformat(m["started"]).strftime("%d %b %Y, %H:%M")
             rivals = f'{m["rivals"]} rival' + ("" if m["rivals"] == 1 else "s")
-            it = QListWidgetItem()
-            it.setData(Qt.UserRole, path)
+            it = self.list.add_row(when, f"{clock(m['duration'])}   ·   {rivals}", path)
             it.setData(Qt.UserRole + 1, when)
-            w = race_row(when, f"{clock(m['duration'])}   ·   {rivals}")
-            it.setSizeHint(QSize(0, row_height()))
-            self.list.addItem(it)
-            self.list.setItemWidget(it, w)
         self.list.blockSignals(False)
         n = self.list.count()
         self.empty.setText("" if n else "No races yet. Online races are recorded automatically "
@@ -224,18 +195,9 @@ class ReplaysPage(QWidget):
         self.list.blockSignals(True)
         self.list.setCurrentRow(row)
         self.list.blockSignals(False)
-        self.mark_selected()
+        self.list.mark_selected()
         if (paths[row] if row >= 0 else None) != self.opened:  # a new replay saved: leave the open one be
             self.open_row(row)
-
-    def mark_selected(self, row=None):
-        """Dark text on the selected row, whose background is the accent."""
-        for i in range(self.list.count()):
-            w = self.list.itemWidget(self.list.item(i))
-            w.setProperty("sel", i == self.list.currentRow())
-            for x in [w] + w.findChildren(QWidget):
-                x.style().unpolish(x)
-                x.style().polish(x)
 
     def open_row(self, row):
         self.stop()
@@ -319,6 +281,7 @@ class ReplaysPage(QWidget):
             self.maps.update(own[:, 1], own[:, 2])
         self.c_map.set_backdrop(self.maps.current)
         self.seek(self.pos)  # draw it
+
 
     def plot(self):
         """The speed chart, of the cars not hidden."""
