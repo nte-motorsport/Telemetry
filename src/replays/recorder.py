@@ -26,6 +26,7 @@ class RaceRecorder(QObject):
         self.writer = None  # the raw traffic of the race being recorded
         self.active = False
         self.world = ""  # the game world (UE level path) as last known
+        self.entrants = []  # the race's entrants as last known (capture/roster.py): they come before the race
 
     def set_enabled(self, on):
         self.enabled = on
@@ -54,6 +55,11 @@ class RaceRecorder(QObject):
             pass
         return None
 
+    def set_field(self, entrants):
+        self.entrants = list(entrants)
+        if self.active and entrants:
+            self.field = self.entrants  # the latest the race server named while the race went on
+
     def set_world(self, level):
         self.world = level
         if self.active and level and not self.level:
@@ -67,6 +73,7 @@ class RaceRecorder(QObject):
         self.started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.me, self.rivals, self.last_t = [], {}, {}
         self.level = self.world
+        self.field = self.entrants
         self.last_rival = now
         if self.raw:
             try:
@@ -116,5 +123,7 @@ class RaceRecorder(QObject):
                       me=shift(self.me), rivals={k: shift(v) for k, v in self.rivals.items()})
         if self.level:
             replay["level"] = self.level
+        if self.field:
+            replay["field"] = self.field
         path = self.store.save(replay, raw=self.end_raw(keep=True))
         self.saved.emit(path)

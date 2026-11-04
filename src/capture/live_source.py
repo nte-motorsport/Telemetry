@@ -7,6 +7,7 @@ from PySide6.QtCore import QThread, Signal
 
 from capture import opponents
 from capture.levels import find_level
+from capture.roster import Roster
 from capture.protocol import decode
 from capture.raw_socket import RawCapture
 from capture.tracker import Tracker
@@ -54,6 +55,7 @@ class LiveSource(QThread):
     rivals = Signal(object)     # other racers after a server update, see opponents.Opponents.update
     failed = Signal(str, str)   # kind ("admin" | "error"), message
     level = Signal(str)         # the game world (UE level path) the game's server is on, "" while not known
+    field = Signal(object)      # the race's entrants, see roster.Roster.field: [] while there are none
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
     BUSY = 300    # packets a second: the game sends up to ~120, so a flow this busy (a video stream) is
@@ -74,6 +76,10 @@ class LiveSource(QThread):
         # after connecting, before the flow is known to be the game's, so every flow is looked at
         self.levels = {}
         self.world = ""  # as last emitted
+        # (source port, destination port) -> the entrants its packets named; looked for only in flows that named a
+        # level (the game's servers), as the race server sends them before the flow is known to be the game's
+        self.rosters = {}
+        self.entrants = []  # as last emitted
         self.tap = None  # a pcap.PcapWriter that gets every captured packet (a race's raw traffic), or None
 
     def stop(self):
@@ -135,6 +141,13 @@ class LiveSource(QThread):
             if len(self.levels) >= self.PROBES and (sport, dport) not in self.levels:
                 self.levels.clear()
             self.levels[(sport, dport)] = lv
+        if (sport, dport) in self.levels:
+            r = self.rosters.get((sport, dport))
+            if r is None:
+                if len(self.rosters) >= self.PROBES:
+                    self.rosters.clear()
+                r = self.rosters[(sport, dport)] = Roster()
+            r.update(payload)
         # the client's own movement goes to the game server, so the server's port is the destination
         server = self.flow[1] if self.flow else None
         flow = (sport, dport)
@@ -147,6 +160,11 @@ class LiveSource(QThread):
         if world != self.world:
             self.world = world
             self.level.emit(world)
+        r = self.rosters.get((self.flow[1], self.flow[0])) if self.flow else None
+        entrants = r.field() if r else []
+        if entrants != self.entrants:
+            self.entrants = entrants
+            self.field.emit(entrants)
 
     def run(self):
         try:

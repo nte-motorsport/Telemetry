@@ -196,6 +196,60 @@ class RowList(QListWidget):
                 x.style().polish(x)
 
 
+class RacersPanel(QFrame):
+    """A race's entrants side by side: each one's name, car and whether it is the player or a bot. The cars on
+    the map aren't matched to them: the game's records list the field, not who is which car."""
+
+    def __init__(self, title="Racers"):
+        super().__init__()
+        self.setProperty("role", "panel")
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)  # as tall as it needs, the charts the rest
+        v = QVBoxLayout(self)
+        v.setContentsMargins(theme.GAP, theme.GAP, theme.GAP, theme.GAP)
+        v.setSpacing(theme.GAP)
+        v.addWidget(label(title, "sectionTitle"))
+        self.row = QHBoxLayout()
+        self.row.setSpacing(theme.GAP)
+        v.addLayout(self.row)
+        self.me = ""
+        self.entrants = []
+
+    def set_me(self, name):
+        self.me = name or ""
+        self.set_entrants(self.entrants)
+
+    def set_entrants(self, entrants):
+        """entrants: [dict(car, name, bot)] (capture/roster.py)"""
+        from ui.vehicles import car_name
+        self.entrants = list(entrants)
+        while self.row.count():
+            w = self.row.takeAt(0).widget()
+            if w:  # gone at once: deleteLater alone leaves it drawn where it was until the event loop runs
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        if not self.entrants:
+            self.row.addWidget(label("Not known yet: the race server names its entrants as the race loads.",
+                                     "muted"))
+        for e in self.entrants:
+            box = QFrame()
+            box.setProperty("role", "panel")
+            b = QVBoxLayout(box)
+            b.setContentsMargins(theme.GAP, theme.GAP // 2, theme.GAP, theme.GAP // 2)
+            b.setSpacing(2)
+            tags = []
+            if self.me and e["name"] == self.me:
+                tags.append(f'<span style="color:{theme.ACCENT}">YOU</span>')
+            if e.get("bot"):
+                tags.append(f'<span style="color:{theme.MUTED}">BOT</span>')
+            head = label(e["name"] + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""), "listTitle")
+            head.setTextFormat(Qt.RichText)
+            b.addWidget(head)
+            b.addWidget(label(car_name(e["car"]), "muted"))
+            self.row.addWidget(box)
+        self.row.addStretch()
+
+
 def scroll(widget):
     s = QScrollArea()
     s.setWidgetResizable(True)
