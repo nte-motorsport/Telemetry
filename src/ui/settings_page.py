@@ -4,8 +4,8 @@ online races. Plugins: the map packs."""
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QMessageBox, QStackedWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from capture.raw_socket import local_ips
 from ui import theme, world_map
@@ -29,10 +29,12 @@ def section_page(title, *intro):
 class SettingsPage(QWidget):
     maps_changed = Signal()  # a map pack was installed, or the maps folder looked at again
 
-    def __init__(self, prefs, sections):
-        """sections: [(page key, title, [(chart key, chart title)])], the pages whose charts Display sets"""
+    def __init__(self, prefs, sections, store=None):
+        """sections: [(page key, title, [(chart key, chart title)])], the pages whose charts Display sets;
+        store: the replays, whose entrants tell the player's name"""
         super().__init__()
         self.prefs = prefs
+        self.store = store
         self.dirty = True
         self.lists = {}
         self.titles = {}
@@ -85,8 +87,65 @@ class SettingsPage(QWidget):
             self.lists[page] = rows
             v.addWidget(p)
             self.fill(page)
+        v.addWidget(self.build_me())
         v.addStretch()
         return body
+
+    def build_me(self):
+        """The player's name in the game: the race server lists every entrant by name, and this is how the
+        Multiplayer and Replays pages tell which one is the player."""
+        p, pl = panel()
+        pl.addWidget(label("You", "sectionTitle"))
+        row = QHBoxLayout()
+        row.setSpacing(theme.GAP)
+        row.addWidget(label("Your name in the game", "muted"))
+        self.my_name = QLineEdit(self.prefs.option("my_name"))
+        self.my_name.setMinimumWidth(220)
+        self.my_name.setPlaceholderText("as other players see it")
+        self.my_name.editingFinished.connect(lambda: self.prefs.set_option("my_name", self.my_name.text().strip()))
+        row.addWidget(self.my_name)
+        self.guess_btn = Button("Use", "check-black")
+        self.guess_btn.clicked.connect(self.use_guess)
+        row.addWidget(self.guess_btn)
+        row.addStretch()
+        pl.addLayout(row)
+        self.guess_text = label("", "muted", wrap=True)
+        pl.addWidget(self.guess_text)
+        pl.addWidget(label("It marks you as YOU among a race's racers on the Multiplayer and Replays pages.",
+                           "muted", wrap=True))
+        self.update_guess()
+        return p
+
+    def guess_name(self):
+        """The name that is among the entrants of every recent race that has them: the player's own."""
+        if self.store is None:
+            return None
+        lists = []
+        for path, _ in self.store.list()[:12]:
+            try:
+                field = self.store.load(path).get("field")
+            except (OSError, ValueError, EOFError):
+                continue
+            if field:
+                lists.append({e["name"] for e in field if not e.get("bot")})
+        if len(lists) < 2:
+            return None
+        common = set.intersection(*lists)
+        return next(iter(common)) if len(common) == 1 else None
+
+    def update_guess(self):
+        g = self.guess_name()
+        self.guess = g if g and g != self.prefs.option("my_name") else None
+        self.guess_btn.setVisible(bool(self.guess))
+        self.guess_text.setVisible(bool(self.guess))
+        if self.guess:
+            self.guess_text.setText(f'"{self.guess}" is in every one of your recent races: that is likely you.')
+
+    def use_guess(self):
+        if self.guess:
+            self.my_name.setText(self.guess)
+            self.prefs.set_option("my_name", self.guess)
+            self.update_guess()
 
     def fill(self, page):
         if page not in self.lists:  # an option, not a page's charts
@@ -141,7 +200,8 @@ class SettingsPage(QWidget):
 
     def build_recording(self):
         body, v, pl = section_page("Recording", "A race is recorded from when the other racers' data starts coming "
-                                                "in until it stops, and can then be watched on the Replays page.")
+                                                "in until it stops, and can then be watched on the Replays page. A replay keeps "
+                                                "each racer's car and in-game name, as the race server sends them.")
         self.auto_record = QCheckBox("Record online races automatically")
         self.auto_record.setChecked(self.prefs.option("auto_record"))
         self.auto_record.toggled.connect(lambda on: self.prefs.set_option("auto_record", on))

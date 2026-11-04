@@ -2,7 +2,9 @@
 
 A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            "me": [[t, x, y, z, km/h], ...], "rivals": {"1": [[t, x, y, z, km/h or null], ...], ...},
-           "level": "/Game/Maps/..." (the game world, when it was known; replays before 2026-11-03 have none)}
+           "level": "/Game/Maps/..." (the game world, when it was known; replays before 2026-11-03 have none),
+           "field": [{"car": "Vehicle026", "name": "...", "bot": false}, ...] (the race's entrants, when they
+           were known: replays from 2026-11-04 on)}
 with t in seconds from the start of the recording.
 
 Next to a replay, with the same name, may be its raw traffic: <name>.pcap.gz, every packet the capture saw while

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSl
 
 from ui import charts, theme
 from ui.multiplayer_page import WINDOW, rival_color, segments
-from ui.widgets import Button, RowList, card, label, panel
+from ui.widgets import Button, RacersPanel, RowList, card, label, panel
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -149,6 +149,9 @@ class ReplaysPage(QWidget):
         self.chip_row.addWidget(self.no_cars, 1)
         self.chip_row.addStretch()
         right.addLayout(self.chip_row)
+        self.racers = RacersPanel()  # the race's entrants, when the replay has them (recorded since 2026-11-04)
+        self.racers.hide()
+        right.addWidget(self.racers)
 
         tp, tl = panel(QHBoxLayout)
         self.play_btn = Button("Play", "player-play", icon_only=True)
@@ -206,6 +209,7 @@ class ReplaysPage(QWidget):
         self.cars = []
         self.duration = 0.0
         self.level = ""
+        field = []
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -215,13 +219,19 @@ class ReplaysPage(QWidget):
             if r:
                 self.duration = r["duration"]
                 self.level = r.get("level") or ""
+                field = r.get("field") or []
                 if r["me"]:
                     self.cars.append(("You", theme.ACCENT, np.array(r["me"], float)))
                 for num, rows in sorted(r["rivals"].items(), key=lambda kv: int(kv[0])):
                     if rows:
                         a = np.array([[np.nan if v is None else v for v in row] for row in rows], float)
                         self.cars.append((f"Rival {num}", rival_color(int(num)), a))
+        self.racers.set_entrants(field)
+        self.racers.setVisible(bool(field))
         self.draw()
+
+    def set_me(self, name):
+        self.racers.set_me(name)
 
     def open_folder(self):
         """Explorer at the replays, with the open one selected."""

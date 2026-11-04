@@ -4,11 +4,11 @@ import time
 from collections import deque
 
 import numpy as np
-from PySide6.QtWidgets import QHBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ui import charts, theme
 from ui.world_map import MapPicker, all_maps
-from ui.widgets import card
+from ui.widgets import RacersPanel, card
 
 WINDOW = 60  # seconds of tracks and speed shown
 MAP_EVERY = 2.0  # s between looks at which game map the tracks are on (while the world isn't known)
@@ -36,9 +36,15 @@ class MultiplayerPage(QWidget):
         self.left = set()  # numbers no longer sent: their last minute stays until the next race
         self.dirty = True
 
-        h = QHBoxLayout(self)
-        h.setContentsMargins(0, 0, 0, 0)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(theme.GAP)
+        h = QHBoxLayout()
         h.setSpacing(theme.GAP)
+        v.addLayout(h, 1)
+        self.racers = RacersPanel()  # who races, from the race server (capture/roster.py)
+        self.racers.set_entrants([])
+        v.addWidget(self.racers)
         self.c_map = charts.MapChart()
         self.maps = MapPicker(all_maps())  # the game map under the tracks: the world's, see set_world
         self.map_at = -1e9  # when the map was last looked at
@@ -69,6 +75,13 @@ class MultiplayerPage(QWidget):
     def trim(hist, now):
         while hist and now - hist[0][0] > WINDOW:
             hist.popleft()
+
+    def set_field(self, entrants):
+        """The race's entrants, from the capture."""
+        self.racers.set_entrants(entrants)
+
+    def set_me(self, name):
+        self.racers.set_me(name)
 
     def set_world(self, level):
         """The game world (UE level path, "" while not known), from the capture."""

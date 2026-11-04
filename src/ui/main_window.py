@@ -37,6 +37,7 @@ class MainWindow(QMainWindow):
         self.live.rivals.connect(self.multiplayer.on_rivals)
         self.live.jumped.connect(self.multiplayer.clear)
         self.live.world.connect(self.multiplayer.set_world)
+        self.live.field.connect(self.multiplayer.set_field)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
         self.prefs.changed.connect(self.on_prefs)
@@ -49,11 +50,13 @@ class MainWindow(QMainWindow):
         self.live.rivals.connect(self.recorder.on_rivals)
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
         self.live.world.connect(self.recorder.set_world)
+        self.live.field.connect(self.recorder.set_field)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
-        self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)])
+        self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)], store)
+        self.set_me()
         self.settings.maps_changed.connect(self.replays.pick_map)  # Live and Multiplayer look every few seconds
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
@@ -143,10 +146,16 @@ class MainWindow(QMainWindow):
             self.recorder.set_enabled(self.prefs.option("auto_record"))
             self.recorder.set_raw(self.prefs.option("raw_traffic"))
             self.live.set_raw(self.raw_wanted())
+            self.set_me()
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:
             self.live.set_charts(self.prefs.shown(key))
+
+    def set_me(self):
+        """The player's name, to mark them among the entrants."""
+        for page in (self.multiplayer, self.replays):
+            page.set_me(self.prefs.option("my_name"))
 
     def raw_wanted(self):
         """Raw traffic is kept for races to be recorded with: only while both are on."""
