@@ -42,7 +42,8 @@ class MainWindow(QMainWindow):
         self.prefs.changed.connect(self.on_prefs)
 
         store = replays or ReplayStore()
-        self.recorder = RaceRecorder(store, self.prefs.option("auto_record"))
+        self.recorder = RaceRecorder(store, self.prefs.option("auto_record"), self.prefs.option("raw_traffic"))
+        self.recorder.tap.connect(self.live.set_tap)
         self.live.driving.connect(self.recorder.on_own)
         self.live.rivals.connect(self.recorder.on_rivals)
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
     def on_prefs(self, key):
         if key == "options":
             self.recorder.set_enabled(self.prefs.option("auto_record"))
+            self.recorder.set_raw(self.prefs.option("raw_traffic"))
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:

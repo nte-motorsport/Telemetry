@@ -5,7 +5,8 @@ import os
 
 from PySide6.QtCore import QObject, Signal
 
-OPTIONS = {"auto_record": True, "network": ""}  # option -> default; network "" = the default-route one
+# option -> default; network "" = the default-route one; raw_traffic: save each race's raw network traffic too
+OPTIONS = {"auto_record": True, "network": "", "raw_traffic": False}
 
 
 def data_dir():

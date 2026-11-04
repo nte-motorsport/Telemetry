@@ -1,8 +1,11 @@
 """Automatic recording of online races: from the first rival data to the end of the race."""
 import datetime
+import os
 import time
 
 from PySide6.QtCore import QObject, Signal
+
+from capture.pcap import PcapWriter
 
 
 class RaceRecorder(QObject):
@@ -10,13 +13,17 @@ class RaceRecorder(QObject):
     seconds, when the player is teleported (a new race or a test drive) or when the app closes."""
     saved = Signal(str)        # the file of a replay just written
     recording = Signal(bool)   # a race recording started / stopped
+    tap = Signal(object)       # a PcapWriter to give every captured packet to while a race is recorded, or None
     END_AFTER = 20.0  # s without rival data that end a race
     MIN_LENGTH = 30.0  # s: shorter recordings (a glimpse of someone in free roam) are not kept
 
-    def __init__(self, store, enabled=True):
+    def __init__(self, store, enabled=True, raw=False):
+        """raw: also save the raw network traffic of each race, next to its replay."""
         super().__init__()
         self.store = store
         self.enabled = enabled
+        self.raw = raw
+        self.writer = None  # the raw traffic of the race being recorded
         self.active = False
         self.world = ""  # the game world (UE level path) as last known
 
@@ -24,6 +31,28 @@ class RaceRecorder(QObject):
         self.enabled = on
         if not on:
             self.finish()
+
+    def set_raw(self, on):
+        """Turned off, the raw traffic of a race being recorded is stopped and thrown away at once: it may be
+        what someone didn't want kept. Turned on, it is recorded from the next race."""
+        self.raw = on
+        if not on:
+            self.end_raw(keep=False)
+
+    def end_raw(self, keep):
+        """Stop the raw traffic; its file, if kept (to go next to the replay), or None."""
+        w, self.writer = self.writer, None
+        if w is None:
+            return None
+        self.tap.emit(None)
+        w.close()
+        if keep:
+            return w.path
+        try:
+            os.remove(w.path)
+        except OSError:
+            pass
+        return None
 
     def set_world(self, level):
         self.world = level
@@ -39,6 +68,12 @@ class RaceRecorder(QObject):
         self.me, self.rivals, self.last_t = [], {}, {}
         self.level = self.world
         self.last_rival = now
+        if self.raw:
+            try:
+                self.writer = PcapWriter(self.store.raw_tmp(self.started))
+                self.tap.emit(self.writer)
+            except OSError:
+                self.writer = None
         self.recording.emit(True)
 
     def on_own(self, d):
@@ -71,16 +106,15 @@ class RaceRecorder(QObject):
         self.active = False
         self.recording.emit(False)
         times = [r[0] for r in self.me] + [r[0] for rows in self.rivals.values() for r in rows]
-        if not self.me or not times:
+        if not self.me or not times or max(times) - min(times) < self.MIN_LENGTH:
+            self.end_raw(keep=False)  # not kept, nor its traffic
             return
         t_lo = min(times)
         duration = max(times) - t_lo
-        if duration < self.MIN_LENGTH:
-            return
         shift = lambda rows: [[round(r[0] - t_lo, 3), *r[1:]] for r in rows]  # start the replay at 0
         replay = dict(version=1, started=self.started, duration=round(duration, 3),
                       me=shift(self.me), rivals={k: shift(v) for k, v in self.rivals.items()})
         if self.level:
             replay["level"] = self.level
-        path = self.store.save(replay)
+        path = self.store.save(replay, raw=self.end_raw(keep=True))
         self.saved.emit(path)

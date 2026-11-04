@@ -111,6 +111,7 @@ class LivePage(QWidget):
         self.maps = MapPicker(all_maps())
         self.map_at = -1e9  # when the map was last looked at
         self.level = ""  # the game world, as the server names it
+        self.tap = None  # where the capture writes the raw traffic, see set_tap
         self.c_gg = charts.GGChart()
         self.c_z = charts.LineChart(xfmt)
         self.c_yaw = charts.LineChart(xfmt, sym=10)
@@ -170,6 +171,7 @@ class LivePage(QWidget):
         self.source.rivals.connect(self.rivals)
         self.source.failed.connect(self.on_failed)
         self.source.level.connect(self.on_level)
+        self.source.tap = self.tap
         self.source.start()
         self.tick()
 
@@ -202,6 +204,13 @@ class LivePage(QWidget):
         self.live_max = max(self.live_max, d["speed_kmh"])
         self.dirty = True
         self.driving.emit(d)
+
+    def set_tap(self, writer):
+        """Give every captured packet to writer (a pcap.PcapWriter), or stop (None); a capture started again
+        (another network chosen) carries on with it."""
+        self.tap = writer
+        if self.source:
+            self.source.tap = writer
 
     def on_level(self, level):
         self.level = level

@@ -182,7 +182,8 @@ class ReplaysPage(QWidget):
         for path, m in self.store.list():
             when = datetime.datetime.fromisoformat(m["started"]).strftime("%d %b %Y, %H:%M")
             rivals = f'{m["rivals"]} rival' + ("" if m["rivals"] == 1 else "s")
-            it = self.list.add_row(when, f"{clock(m['duration'])}   ·   {rivals}", path)
+            raw = "   ·   raw traffic" if m.get("raw") else ""
+            it = self.list.add_row(when, f"{clock(m['duration'])}   ·   {rivals}{raw}", path)
             it.setData(Qt.UserRole + 1, when)
         self.list.blockSignals(False)
         n = self.list.count()

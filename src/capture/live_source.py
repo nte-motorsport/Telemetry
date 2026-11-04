@@ -74,6 +74,7 @@ class LiveSource(QThread):
         # after connecting, before the flow is known to be the game's, so every flow is looked at
         self.levels = {}
         self.world = ""  # as last emitted
+        self.tap = None  # a pcap.PcapWriter that gets every captured packet (a race's raw traffic), or None
 
     def stop(self):
         self._stop = True
@@ -157,7 +158,7 @@ class LiveSource(QThread):
             self.failed.emit("error", f"Could not start capture on {self.ip}: {e}")
             return
         try:
-            for sport, dport, payload in cap.packets(lambda: self._stop):
+            for sport, dport, payload in cap.packets(lambda: self._stop, lambda: self.tap):
                 self.handle(sport, dport, payload, time.monotonic())
         except OSError as e:
             self.failed.emit("error", f"Capture stopped: {e}")
