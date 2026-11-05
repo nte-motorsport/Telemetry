@@ -5,14 +5,21 @@ plain text UE strings (an int32 length, NUL included, then the text) but packed 
 
   "Vehicle026"  int32 0  int16 slot  int16 0  int16 0xFF00  int16 1  int16 0  "<driver's name>"
 
-the slot one of a few fixed values a race (its place in the field), the car a row of the game's vehicle table
-(see ui/vehicles.py). A bot also has a record that starts with "AIRacer_Vehicle..." and holds its name a little
-further on. The records do not say which of the cars on the map (capture/opponents.py) is whose: they list the
-field. Found in seven online races with recorded traffic (2026-11-04).
+the slot one of a few fixed values a race (524, 576, 628, 680 for four), the car a row of the game's vehicle table
+(see ui/vehicles.py). The slots are not the entrants' own: the server sends the records again, shuffled, as the
+race loads (2-3 times in 10 s), so an entrant is known by name. A name of other than ASCII is sent as UTF-16 (its
+length negative, in characters): "я Ваня" was missing from five races of 2026-11-05 and whoever had their slot
+before was listed twice instead. A bot also has a record that starts with "AIRacer_Vehicle..." and holds its
+name a little further on (not every bot's: in two races of three bots one was named so). The records do not say
+which of the cars on the map (capture/opponents.py) is whose: they list the field. Found in seven online races
+with recorded traffic (2026-11-04).
 """
 import re
 
-CAR = re.compile(rb"((?:AIRacer_)?[Vv]ehicle_?\d{3})\x00")
+# a bot's car may have a number after it, "AIRacer_Vehicle018_09": with it, two bots of three went unnamed in
+# two races (2026-11-05)
+CAR = re.compile(rb"((?:AIRacer_)?[Vv]ehicle_?\d{3}(?:_\d+)?)\x00")
+NOT_NAME = re.compile(r"(?i)(robot\d|vehicle|airacer_|v\d{3}_)")  # the other strings near a bot's name
 GAP = [0, 0xFF00, 1, 0]  # the int16s between the slot and the name
 BOT = "AIRacer_"
 
@@ -22,6 +29,18 @@ def ue_string(n, bit, nbits):
     if bit < 0 or bit + 32 > nbits:
         return None
     ln = (n >> bit) & 0xFFFFFFFF
+    if ln >= 1 << 31:  # UTF-16: -ln characters
+        chars = (1 << 32) - ln
+        if not 2 <= chars <= 64 or bit + 32 + 16 * chars > nbits:
+            return None
+        raw = ((n >> (bit + 32)) & ((1 << (16 * chars)) - 1)).to_bytes(2 * chars, "little")
+        if raw[-2:] != b"\0\0":
+            return None
+        try:
+            text = raw[:-2].decode("utf-16-le")
+        except UnicodeDecodeError:
+            return None
+        return text if text.isprintable() else None
     if not 2 <= ln <= 64 or bit + 32 + 8 * ln > nbits:
         return None
     raw = ((n >> (bit + 32)) & ((1 << (8 * ln)) - 1)).to_bytes(ln, "little")
@@ -48,17 +67,14 @@ def decode(payload):
                 continue
             end = start + 32 + 8 * (len(text) + 1)
             if text.startswith(BOT):
-                # a bot's record: its name is one of the strings that follow
-                bit, found = end, 0
-                while bit < min(end + 600, nbits - 32) and found < 3:
+                # a bot's record: "AIRacer_Vehicle018_09", "Robot0045", "Vehicle018" (not always), its name
+                bit = end
+                while bit < min(end + 600, nbits - 32):
                     s = ue_string(n, bit, nbits)
-                    if s:
-                        if not s.lower().startswith("vehicle"):
-                            bots.add(s)
-                        found += 1
-                        bit += 32 + 8 * (len(s) + 1)
-                    else:
-                        bit += 1
+                    if s and not NOT_NAME.match(s):
+                        bots.add(s)
+                        break
+                    bit += 32 + (8 if s.isascii() else 16) * (len(s) + 1) if s else 1
                 continue
             if (n >> end) & 0xFFFFFFFF:
                 continue
@@ -75,7 +91,7 @@ class Roster:
     """The field of one race server, as its records come in."""
 
     def __init__(self):
-        self.entrants = {}  # slot -> (car id, name)
+        self.entrants = {}  # name -> (slot, car id), the latest record of each
         self.bots = set()   # names of the bots
 
     def update(self, payload):
@@ -83,8 +99,8 @@ class Roster:
         entrants, bots = decode(payload)
         changed = False
         for slot, car, name in entrants:
-            if self.entrants.get(slot) != (car, name):
-                self.entrants[slot] = (car, name)
+            if self.entrants.get(name) != (slot, car):
+                self.entrants[name] = (slot, car)
                 changed = True
         if bots - self.bots:
             self.bots |= bots
@@ -94,4 +110,4 @@ class Roster:
     def field(self):
         """[dict(car, name, bot)] in slot order."""
         return [dict(car=car, name=name, bot=name in self.bots)
-                for _, (car, name) in sorted(self.entrants.items())]
+                for name, (_, car) in sorted(self.entrants.items(), key=lambda kv: kv[1][0])]

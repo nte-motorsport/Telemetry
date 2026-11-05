@@ -72,6 +72,7 @@ class RaceRecorder(QObject):
         self.t0 = now
         self.started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.me, self.rivals, self.last_t = [], {}, {}
+        self.bots = {}  # rival number -> tally of its updates with the AI flag (+1) and without (-1)
         self.level = self.world
         self.field = self.entrants
         self.last_rival = now
@@ -98,6 +99,7 @@ class RaceRecorder(QObject):
                 continue
             self.last_t[num] = c["t"]
             v = c["speed_kmh"]
+            self.bots[num] = self.bots.get(num, 0) + (1 if c.get("bot") else -1)
             self.rivals.setdefault(str(num), []).append(
                 [round(c["t"] - self.t0, 3), round(c["x"], 2), round(c["y"], 2), round(c["z"], 2),
                  None if v is None else round(v, 1)])
@@ -125,5 +127,8 @@ class RaceRecorder(QObject):
             replay["level"] = self.level
         if self.field:
             replay["field"] = self.field
+        bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
+        if bots:
+            replay["bots"] = bots
         path = self.store.save(replay, raw=self.end_raw(keep=True))
         self.saved.emit(path)

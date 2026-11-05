@@ -116,6 +116,8 @@ class LiveSource(QThread):
             self.seen = now
             return True
         r = self.tracker.pick(cands)
+        if r:
+            self.opponents.own(now, r[1], r[2])  # to tell the server's echo of this car from the rivals
         d = self.tracker.update(*r) if r else None
         if d:
             if d["jump"]:  # teleported: whoever was around is not any more
@@ -154,7 +156,7 @@ class LiveSource(QThread):
         if flow == self.flow or (now - self.seen > self.ALIVE and not self.busy(flow, now)):
             self.feed(payload, flow, now)
         elif sport == server and dport == self.flow[0]:
-            self.feed_server(payload)
+            self.feed_server(payload, now)
         # the game's server -> client direction is the reverse of its flow
         world = self.levels.get((self.flow[1], self.flow[0]), "") if self.flow else ""
         if world != self.world:
@@ -165,6 +167,9 @@ class LiveSource(QThread):
         if entrants != self.entrants:
             self.entrants = entrants
             self.field.emit(entrants)
+        # cars the game drives are a race's bots when the server named a field to race; in free roam (a world
+        # shared with friends) they are its people and traffic, 20-30 of them, which aren't rivals
+        self.opponents.allow_ai = len(entrants) >= 2
 
     def run(self):
         try:
