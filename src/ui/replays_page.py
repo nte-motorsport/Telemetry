@@ -220,12 +220,14 @@ class ReplaysPage(QWidget):
                 self.duration = r["duration"]
                 self.level = r.get("level") or ""
                 field = r.get("field") or []
+                bots = set(r.get("bots") or [])
                 if r["me"]:
                     self.cars.append(("You", theme.ACCENT, np.array(r["me"], float)))
                 for num, rows in sorted(r["rivals"].items(), key=lambda kv: int(kv[0])):
                     if rows:
                         a = np.array([[np.nan if v is None else v for v in row] for row in rows], float)
-                        self.cars.append((f"Rival {num}", rival_color(int(num)), a))
+                        who = "Bot" if num in bots else "Rival"
+                        self.cars.append((f"{who} {num}", rival_color(int(num)), a))
         self.racers.set_entrants(field)
         self.racers.setVisible(bool(field))
         self.draw()
