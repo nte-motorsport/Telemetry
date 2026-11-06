@@ -247,17 +247,21 @@ class RacersPanel(QFrame):
             tags = []
             if self.me and e["name"] == self.me:
                 tags.append(f'<span style="color:{theme.ACCENT}">YOU</span>')
-            if e.get("bot"):
-                tags.append(f'<span style="color:{theme.MUTED}">BOT</span>')
             color = theme.ACCENT if self.me and e["name"] == self.me else self.colors.get(e["name"])
             dot = f'<span style="color:{color}">&#9679;</span>&nbsp;' if color else ""
-            head = label(dot + html.escape(e["name"]) + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""),
+            head = label(dot + html.escape(shown_name(e["name"], e.get("bot")))
+                         + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""),
                          "listTitle")
             head.setTextFormat(Qt.RichText)
             b.addWidget(head)
             b.addWidget(label(car_name(e["car"]), "muted"))
             self.row.addWidget(box)
         self.row.addStretch()
+
+
+def shown_name(name, bot):
+    """A racer's name as the app writes it: a bot's between colons, ":Ethan27:"."""
+    return f":{name}:" if bot else name
 
 
 def scroll(widget):

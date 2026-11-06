@@ -537,6 +537,7 @@ class MapChart(BaseChart):
         self.markers = pg.ScatterPlotItem(size=12, pen=pg.mkPen(theme.BG, width=2))
         self.addItem(self.markers)
         self.markers.setZValue(10)  # above the tracks
+        self.labels = []  # pg.TextItem over the markers that have a name, made as needed and kept
         self.backdrop = None  # the game map under the tracks, see set_backdrop
         if interactive:
             pi.setMouseEnabled(True, True)
@@ -646,9 +647,33 @@ class MapChart(BaseChart):
             self.setRange(xRange=self.fit[0], yRange=self.fit[1], padding=0)
 
     def set_markers(self, markers):
-        """markers: [(x, y, color)], e.g. where each run is at the hover point."""
+        """markers: [(x, y, color) or (x, y, color, name)], e.g. where each run is at the hover point; a name is
+        written over its marker, in a small box edged in the marker's colour that keeps its size in pixels."""
         self.markers.setData([m[1] for m in markers], [m[0] for m in markers],
                              brush=[brush(m[2]) for m in markers])
+        named = [m for m in markers if len(m) > 3 and m[3]]
+        while len(self.labels) < len(named):
+            t = pg.TextItem(color=theme.TEXT, fill=pg.mkBrush(QColor(10, 11, 13, 210)), anchor=(0.5, 1.45))
+            t.setFont(theme.font(11))
+            t.textItem.document().setDocumentMargin(2)
+            t.setZValue(11)  # above the markers
+            self.addItem(t, ignoreBounds=True)
+            self.labels.append(t)
+        for t, (x, y, color, name) in zip(self.labels, named):
+            if t.toPlainText() != name:
+                t.setText(name)
+            if getattr(t, "edge", None) != color:
+                t.edge = color
+                t.border = pg.mkPen(color, width=1.5)
+                t.update()
+            # by an edge of the view, the box goes to the inside of the marker rather than off the chart
+            (x0, x1), _ = self.viewRange()
+            half = t.boundingRect().width() / 2 * self.getPlotItem().vb.viewPixelSize()[0]
+            t.setAnchor((0.0 if y - half < x0 else 1.0 if y + half > x1 else 0.5, 1.45))
+            t.setPos(y, x)  # screen order: game +Y right, +X up
+            t.show()
+        for t in self.labels[len(named):]:
+            t.hide()
 
 
 class GGChart(BaseChart):

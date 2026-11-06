@@ -1,6 +1,7 @@
 """The Replays page: recorded online races, each on a map and a speed chart with a timeline to scrub, and
-everyone's speed at the timeline's position, where each car can be hidden."""
+everyone's name, car and speed at the timeline's position, where each car can be hidden."""
 import datetime
+import html
 import os
 import subprocess
 import time
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSl
 
 from ui import charts, theme
 from ui.multiplayer_page import WINDOW, rival_color, segments
-from ui.widgets import Button, RacersPanel, RowList, card, label, panel
+from ui.vehicles import car_name
+from ui.widgets import Button, RowList, card, label, panel, shown_name
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -26,14 +28,17 @@ def clock(s):
 
 
 class CarChip(QFrame):
-    """One car under the charts: its colour and name, its speed at the timeline's position, and a button
-    that hides it from the map and the speed chart."""
+    """One car under the charts: its colour, its driver's name and the car (when the replay has the race's
+    entrants), its speed at the timeline's position, and a button that hides it from the map and the speed
+    chart."""
 
     def __init__(self, on_toggle):
         super().__init__()
         self.setProperty("role", "panel")
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)  # side by side from the left, not spread out
         self.name = ""
+        self.shown = ""  # the name as written: a bot's between colons (widgets.shown_name)
+        self.about = ""  # what is written after the name: the car
         self.hidden = False
         h = QHBoxLayout(self)
         h.setContentsMargins(theme.GAP, theme.GAP, theme.GAP + 4, theme.GAP)
@@ -52,18 +57,23 @@ class CarChip(QFrame):
         v.addWidget(self.value)
         h.addLayout(v, 1)
 
-    def set_car(self, name, color):
+    def set_car(self, name, color, about="", shown=None):
         """Show this car (chips are kept and given the next replay's cars, so switching replays doesn't
-        rebuild the row and make it jump)."""
+        rebuild the row and make it jump). name: the key it is hidden under; shown: as written, if not name."""
         self.name = name
+        self.shown = shown or name
+        self.about = about
         self.btn.set_tint(color)
         self.set_hidden(False)
 
     def set_hidden(self, on):
         self.hidden = on
-        self.title.setText(self.name)
+        sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
+        about = sep + sep.join(html.escape(part) for part in self.about.split(" · ")) if self.about else ""
+        self.title.setText(f'<span style="color:{theme.MUTED if on else theme.TEXT}">{html.escape(self.shown)}</span>'
+                           f'{about}')
         self.btn.set_icon("eye-off" if on else "eye")
-        self.btn.setToolTip(f"Show {self.name}" if on else f"Hide {self.name}")
+        self.btn.setToolTip(f"Show {self.shown}" if on else f"Hide {self.shown}")
         self.setProperty("off", on)
         for w in (self, self.value):
             w.style().unpolish(w)
@@ -149,9 +159,9 @@ class ReplaysPage(QWidget):
         self.chip_row.addWidget(self.no_cars, 1)
         self.chip_row.addStretch()
         right.addLayout(self.chip_row)
-        self.racers = RacersPanel()  # the race's entrants, when the replay has them (recorded since 2026-11-04)
-        self.racers.hide()
-        right.addWidget(self.racers)
+        self.me = ""  # the player's name, written over their own marker
+        self.field = []  # the open replay's entrants, when it has them (recorded since 2026-11-04)
+        self.bots = set()  # names (as in self.cars) of the open replay's cars that bots drive
 
         tp, tl = panel(QHBoxLayout)
         self.play_btn = Button("Play", "player-play", icon_only=True)
@@ -207,9 +217,10 @@ class ReplaysPage(QWidget):
         self.stop()
         it = self.list.item(row) if row >= 0 else None
         self.cars = []
+        self.bots = set()
         self.duration = 0.0
         self.level = ""
-        field = []
+        self.field = []
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -219,23 +230,38 @@ class ReplaysPage(QWidget):
             if r:
                 self.duration = r["duration"]
                 self.level = r.get("level") or ""
-                field = r.get("field") or []
+                self.field = r.get("field") or []
                 bots = set(r.get("bots") or [])
                 names = r.get("names") or {}
+                field_bots = {e["name"] for e in self.field if e.get("bot")}
                 if r["me"]:
                     self.cars.append(("You", theme.ACCENT, np.array(r["me"], float)))
                 for num, rows in sorted(r["rivals"].items(), key=lambda kv: int(kv[0])):
                     if rows:
                         a = np.array([[np.nan if v is None else v for v in row] for row in rows], float)
-                        who = names.get(num) or ("Bot" if num in bots else "Rival") + f" {num}"
+                        who = names.get(num) or f"Rival {num}"
+                        if num in bots or who in field_bots:
+                            self.bots.add(who)
                         self.cars.append((who, rival_color(int(num)), a))
-        self.racers.set_entrants(field)
-        self.racers.set_colors({c[0]: c[1] for c in self.cars})
-        self.racers.setVisible(bool(field))
         self.draw()
 
     def set_me(self, name):
-        self.racers.set_me(name)
+        self.me = name or ""
+        if self.cars:
+            for chip, (n, c, _) in zip(self.chips, self.cars):
+                chip.set_car(n, c, self.about(n), "You" if n == "You" else self.label(n))
+                chip.set_hidden(n in self.hidden)
+            self.seek(self.pos)
+
+    def about(self, name):
+        """What the open replay's entrants say of the car under name: its model."""
+        who = self.me if name == "You" else name
+        e = next((e for e in self.field if e["name"] == who), None)
+        return car_name(e["car"]) if e else ""
+
+    def label(self, name):
+        """The name of the car under name as written on its chip and over its marker on the map."""
+        return (self.me or "You") if name == "You" else shown_name(name, name in self.bots)
 
     def open_folder(self):
         """Explorer at the replays, with the open one selected."""
@@ -271,7 +297,7 @@ class ReplaysPage(QWidget):
             self.pool.append(chip)
         self.chips = self.pool[:len(self.cars)]
         for chip, (n, c, _) in zip(self.chips, self.cars):
-            chip.set_car(n, c)
+            chip.set_car(n, c, self.about(n), "You" if n == "You" else self.label(n))
         for i, chip in enumerate(self.pool):
             chip.setVisible(i < len(self.cars))
         self.no_cars.setVisible(not self.chips)
@@ -329,7 +355,7 @@ class ReplaysPage(QWidget):
             trail = a[i:j]
             if here:
                 trail = np.vstack([trail, now])
-                markers.append((now[0, 1], now[0, 2], c))
+                markers.append((now[0, 1], now[0, 2], c, self.label(n)))
             tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2)
                        for s in segments(trail)]
         self.c_map.set_tracks(tracks, markers, self.area)
