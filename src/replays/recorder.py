@@ -60,6 +60,10 @@ class RaceRecorder(QObject):
         if self.active and entrants:
             self.field = self.entrants  # the latest the race server named while the race went on
 
+    def set_names(self, names):
+        if self.active:
+            self.names.update(names)  # a name once matched stays: the capture forgets them at the finish
+
     def set_world(self, level):
         self.world = level
         if self.active and level and not self.level:
@@ -73,6 +77,7 @@ class RaceRecorder(QObject):
         self.started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.me, self.rivals, self.last_t = [], {}, {}
         self.bots = {}  # rival number -> tally of its updates with the AI flag (+1) and without (-1)
+        self.names = {}  # rival number -> entrant's name, as the capture matched them
         self.level = self.world
         self.field = self.entrants
         self.last_rival = now
@@ -127,6 +132,8 @@ class RaceRecorder(QObject):
             replay["level"] = self.level
         if self.field:
             replay["field"] = self.field
+        if self.names:
+            replay["names"] = {str(n): name for n, name in sorted(self.names.items())}
         bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
         if bots:
             replay["bots"] = bots

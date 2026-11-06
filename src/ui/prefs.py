@@ -6,8 +6,9 @@ import os
 from PySide6.QtCore import QObject, Signal
 
 # option -> default; network "" = the default-route one; raw_traffic: save each race's raw network traffic too;
-# my_name: the player's name in the game, to mark them among a race's entrants ("" = not known)
-OPTIONS = {"auto_record": True, "network": "", "raw_traffic": False, "my_name": ""}
+# my_name: the player's name in the game, to mark them among a race's entrants ("" = not known), and my_id their
+# account id ("" = not known): both found in the game's traffic (capture/roster.py, ROLE), or the name set by hand
+OPTIONS = {"auto_record": True, "network": "", "raw_traffic": False, "my_name": "", "my_id": ""}
 
 
 def data_dir():

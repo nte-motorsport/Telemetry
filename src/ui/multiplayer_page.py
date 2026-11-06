@@ -80,6 +80,10 @@ class MultiplayerPage(QWidget):
         """The race's entrants, from the capture."""
         self.racers.set_entrants(entrants)
 
+    def set_names(self, names):
+        """{rival number: name}, from the capture: each entrant in their car's colour."""
+        self.racers.set_colors({name: rival_color(num) for num, name in names.items()})
+
     def set_me(self, name):
         self.racers.set_me(name)
 

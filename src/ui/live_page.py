@@ -70,12 +70,15 @@ class LivePage(QWidget):
     jumped = Signal()        # teleported: what came before is another place
     world = Signal(str)      # the game world (UE level path), "" while not known
     field = Signal(object)   # the race's entrants, passed on from the capture (capture/roster.py)
+    names = Signal(object)   # {rival number: name}, passed on from the capture (capture/identity.py)
+    player = Signal(str, str)  # the player's own name and account id, passed on from the capture
     CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
               ("z", "Altitude"), ("yaw", "Yaw rate")]
 
     def __init__(self):
         super().__init__()
         self.live = History()
+        self.me = ""
         self.last = None  # the latest sample, for the tiles
         self.live_max = 0.0
         self.shown = {k for k, _ in self.CHARTS}  # charts on the page; the others are not drawn
@@ -174,6 +177,9 @@ class LivePage(QWidget):
         self.source.failed.connect(self.on_failed)
         self.source.level.connect(self.on_level)
         self.source.field.connect(self.field)
+        self.source.names.connect(self.names)
+        self.source.player.connect(self.player)
+        self.source.me = self.me
         self.source.tap = self.raw
         self.source.start()
         self.tick()
@@ -184,8 +190,11 @@ class LivePage(QWidget):
             self.source.rivals.disconnect()
             self.source.level.disconnect()
             self.source.field.disconnect()
+            self.source.names.disconnect()
+            self.source.player.disconnect()
             self.on_level("")
             self.field.emit([])
+            self.names.emit({})
             self.source.stop()
             self.source = None
 
@@ -219,6 +228,13 @@ class LivePage(QWidget):
             self.raw = None
         if self.source:
             self.source.tap = self.raw
+
+    def set_me(self, name):
+        """The player's name: the capture leaves it out when matching names to cars it can't find the player's
+        own among."""
+        self.me = name or ""
+        if self.source:
+            self.source.me = self.me
 
     def set_tap(self, writer):
         """Write the raw traffic into writer (a pcap.PcapWriter), the kept seconds first; None: stop."""

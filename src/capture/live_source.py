@@ -6,6 +6,7 @@ from collections import deque
 from PySide6.QtCore import QThread, Signal
 
 from capture import opponents
+from capture.identity import Identity
 from capture.levels import find_level
 from capture.roster import Roster
 from capture.protocol import decode
@@ -56,6 +57,9 @@ class LiveSource(QThread):
     failed = Signal(str, str)   # kind ("admin" | "error"), message
     level = Signal(str)         # the game world (UE level path) the game's server is on, "" while not known
     field = Signal(object)      # the race's entrants, see roster.Roster.field: [] while there are none
+    names = Signal(object)      # {rival number: entrant's name} of the rivals known by name (capture/identity.py)
+    player = Signal(str, str)   # the player's own name and account id (as text: it doesn't fit a C int), see
+                                # roster.ROLE: as soon as a server sends them
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
     BUSY = 300    # packets a second: the game sends up to ~120, so a flow this busy (a video stream) is
@@ -79,7 +83,11 @@ class LiveSource(QThread):
         # (source port, destination port) -> the entrants its packets named; looked for only in flows that named a
         # level (the game's servers), as the race server sends them before the flow is known to be the game's
         self.rosters = {}
+        self.identities = {}  # the same flows -> Identity: the cars their servers made
         self.entrants = []  # as last emitted
+        self.named = {}     # as last emitted
+        self.me = ""        # the player's name, see Identity.match: from the game (player), else as set
+        self.role = None    # the player's own (account id, name), as last emitted
         self.tap = None  # a pcap.PcapWriter that gets every captured packet (a race's raw traffic), or None
 
     def stop(self):
@@ -150,6 +158,16 @@ class LiveSource(QThread):
                     self.rosters.clear()
                 r = self.rosters[(sport, dport)] = Roster()
             r.update(payload)
+            if r.role and r.role != self.role:
+                self.role = r.role
+                self.me = r.role[1]
+                self.player.emit(r.role[1], str(r.role[0]))
+            ident = self.identities.get((sport, dport))
+            if ident is None:
+                if len(self.identities) >= self.PROBES:
+                    self.identities.clear()
+                ident = self.identities[(sport, dport)] = Identity()
+            ident.feed(payload)
         # the client's own movement goes to the game server, so the server's port is the destination
         server = self.flow[1] if self.flow else None
         flow = (sport, dport)
@@ -170,6 +188,21 @@ class LiveSource(QThread):
         # cars the game drives are a race's bots when the server named a field to race; in free roam (a world
         # shared with friends) they are its people and traffic, 20-30 of them, which aren't rivals
         self.opponents.allow_ai = len(entrants) >= 2
+        named = self.match_names(r, self.identities.get((self.flow[1], self.flow[0])) if self.flow else None)
+        if named != self.named:
+            self.named = named
+            self.names.emit(named)
+
+    def match_names(self, roster, ident):
+        """{rival number: name} for the rivals the field can be matched to."""
+        if not roster or not ident or not roster.entrants:
+            return {}
+        opp = self.opponents
+        own = next(iter(opp.own_ids)) if len(opp.own_ids) == 1 else None
+        humans = [cid for cid, ai in opp.ai.items() if not ai]
+        bots = [cid for cid, ai in opp.ai.items() if ai]
+        by_car = ident.match(roster.order(), roster.bots, humans, bots, own, self.me)
+        return {opp.nums[cid]: name for cid, name in by_car.items() if cid in opp.nums}
 
     def run(self):
         try:

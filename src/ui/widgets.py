@@ -1,4 +1,5 @@
 """Small building blocks in the NTE Motorsport site style: panels, buttons, tiles, chart cards, the backdrop."""
+import html
 import math
 
 from PySide6.QtCore import QSize, Qt
@@ -197,8 +198,8 @@ class RowList(QListWidget):
 
 
 class RacersPanel(QFrame):
-    """A race's entrants side by side: each one's name, car and whether it is the player or a bot. The cars on
-    the map aren't matched to them: the game's records list the field, not who is which car."""
+    """A race's entrants side by side: each one's name, car and whether it is the player or a bot, and the colour
+    of their car on the map and the charts once the capture has matched them (capture/identity.py)."""
 
     def __init__(self, title="Racers"):
         super().__init__()
@@ -213,6 +214,12 @@ class RacersPanel(QFrame):
         v.addLayout(self.row)
         self.me = ""
         self.entrants = []
+        self.colors = {}  # name -> colour of their car on the map and the charts
+
+    def set_colors(self, colors):
+        if colors != self.colors:
+            self.colors = dict(colors)
+            self.set_entrants(self.entrants)
 
     def set_me(self, name):
         self.me = name or ""
@@ -242,7 +249,10 @@ class RacersPanel(QFrame):
                 tags.append(f'<span style="color:{theme.ACCENT}">YOU</span>')
             if e.get("bot"):
                 tags.append(f'<span style="color:{theme.MUTED}">BOT</span>')
-            head = label(e["name"] + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""), "listTitle")
+            color = theme.ACCENT if self.me and e["name"] == self.me else self.colors.get(e["name"])
+            dot = f'<span style="color:{color}">&#9679;</span>&nbsp;' if color else ""
+            head = label(dot + html.escape(e["name"]) + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""),
+                         "listTitle")
             head.setTextFormat(Qt.RichText)
             b.addWidget(head)
             b.addWidget(label(car_name(e["car"]), "muted"))
