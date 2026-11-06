@@ -67,6 +67,10 @@ class Opponents:
                       # or right after the start, and a rival once shown stays shown, however close it
                       # gets in a duel (the old rule, "within 15 m most of the time", hid one for 30 s)
     SELF_SPAN = 20    # latest distances that median is taken over
+    # A car held back by that rule for long is the player's own for good: at the finish the game drives the car
+    # on and the player's own position stops matching it, and the echo, held back the whole race, was shown for
+    # the last 3-30 s (three races of 2026-11-06)
+    SELF_HOLD = 80    # updates (some 2 s of them)
     # The rule above misses the echo at speed: the player's own position is the latest one sent, every
     # 67-100 ms, so at 200+ km/h the echo reads 1-6 m away and its median crosses SELF_DIST (a friend's own
     # car shown as a rival for the second half of two races, 2026-11-05). Compared with where the player was
@@ -99,10 +103,12 @@ class Opponents:
         # latest (position, player's position) of the records that followed on, off=local time minus this
         # car's time at the quickest delivery seen, at=arrival of its latest record, recent=(local t, x, y)
         # of the latest records that followed on, ai=the game drives it, ais=the tally that says so, near=looks
-        # in a row that found it on the player's own track, look=when it was last looked at)
+        # in a row that found it on the player's own track, look=when it was last looked at, held=updates it
+        # was held back for being where the player is)
         self.cars = {}
         self.nums = {}  # car id -> number, for as long as this object lives (one server)
         self.own_ids = set()  # car ids found to be the player's own car
+        self.ai = {}  # car id -> the game drives it, for every car shown, as when first shown
         self.track = deque()  # (local t, x, y) of the player's own positions, the last OWN_SPAN s
         self.allow_ai = True  # cars the game drives count: race bots. Not in free roam, where they are NPCs
 
@@ -158,7 +164,7 @@ class Opponents:
                 self.cars[cid] = dict(num=None, hist=deque([(st, *p)]), pending=None, good=0,
                                       dists=deque(maxlen=self.SELF_SPAN), start=p, moved=False, grid=False,
                                       still=deque(maxlen=self.CONFIRM), off=t - st, at=t,
-                                      recent=deque(maxlen=self.SELF_RECENT), ai=ai, ais=1 if ai else -1,
+                                      recent=deque(maxlen=self.SELF_RECENT), ai=ai, ais=1 if ai else -1, held=0,
                                       near=0, look=t)
                 continue
             # the flag is set now and then on a player's car too (in 1-2% of its records): by the majority
@@ -211,18 +217,29 @@ class Opponents:
                 if cid in self.nums:  # shown before: a rival that was out of range for a while
                     if car["good"] < self.RECONFIRM:
                         continue
-                elif (car["good"] < self.CONFIRM or not (car["moved"] or car["grid"])
-                      or not car["dists"]
-                      or statistics.median(car["dists"]) < self.SELF_DIST or self.on_own_track(car)):
-                    continue  # not shown (yet): unconfirmed, never moved, or the player's own car
+                elif car["good"] < self.CONFIRM or not (car["moved"] or car["grid"]) or not car["dists"]:
+                    continue  # not shown (yet): unconfirmed or never moved
+                elif statistics.median(car["dists"]) < self.SELF_DIST:
+                    car["held"] += 1  # the player's own car, by the look of it
+                    if car["held"] >= self.SELF_HOLD:
+                        self.own_ids.add(cid)
+                        del self.cars[cid]
+                    continue
+                elif self.on_own_track(car):
+                    self.own_ids.add(cid)
+                    del self.cars[cid]
+                    continue
                 car["num"] = self.nums.setdefault(cid, len(self.nums) + 1)
             elif t - car["look"] >= self.SELF_EVERY:  # shown: the echo, missed at first?
                 car["look"] = t
                 car["near"] = car["near"] + 1 if self.on_own_track(car) else 0
                 if car["near"] >= self.SELF_TIMES:
                     self.own_ids.add(cid)
+                    self.ai.pop(cid, None)
                     del self.cars[cid]
                     continue
+            # as when first shown: after the finish the game drives a player's car on, with the AI flag
+            self.ai.setdefault(cid, car["ai"])
             while len(h) > 2 and h[-1][0] - h[1][0] >= self.SPEED_SPAN:
                 h.popleft()
             span = h[-1][0] - h[0][0]

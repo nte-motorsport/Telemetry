@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
         self.live.jumped.connect(self.multiplayer.clear)
         self.live.world.connect(self.multiplayer.set_world)
         self.live.field.connect(self.multiplayer.set_field)
+        self.live.names.connect(self.multiplayer.set_names)
+        self.live.player.connect(self.on_player)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
         self.prefs.changed.connect(self.on_prefs)
@@ -51,6 +53,7 @@ class MainWindow(QMainWindow):
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
         self.live.world.connect(self.recorder.set_world)
         self.live.field.connect(self.recorder.set_field)
+        self.live.names.connect(self.recorder.set_names)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.recorder.saved.connect(lambda path: self.replays.refresh())
@@ -152,9 +155,16 @@ class MainWindow(QMainWindow):
         else:
             self.live.set_charts(self.prefs.shown(key))
 
+    def on_player(self, name, account):
+        """The game named the player: kept, so it is known from the start next time (a race joined before the
+        server sends it)."""
+        if (name, account) != (self.prefs.option("my_name"), self.prefs.option("my_id")):
+            self.prefs.options["my_name"] = name  # one change, one save, one "options" signal
+            self.prefs.set_option("my_id", account)
+
     def set_me(self):
         """The player's name, to mark them among the entrants."""
-        for page in (self.multiplayer, self.replays):
+        for page in (self.live, self.multiplayer, self.replays):
             page.set_me(self.prefs.option("my_name"))
 
     def raw_wanted(self):

@@ -63,6 +63,7 @@ class SettingsPage(QWidget):
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
         prefs.changed.connect(self.fill)
+        prefs.changed.connect(lambda key: key == "options" and self.update_guess())  # the game named you
 
     # ----- Display -----
 
@@ -111,8 +112,11 @@ class SettingsPage(QWidget):
         pl.addLayout(row)
         self.guess_text = label("", "muted", wrap=True)
         pl.addWidget(self.guess_text)
-        pl.addWidget(label("It marks you as YOU among a race's racers on the Multiplayer and Replays pages.",
-                           "muted", wrap=True))
+        self.found_text = label("", "muted", wrap=True)
+        pl.addWidget(self.found_text)
+        pl.addWidget(label("It marks you as YOU among a race's racers on the Multiplayer and Replays pages, and "
+                           "tells your own car from the others'. The game sends it, with your account ID, when "
+                           "you connect: the app fills it in itself.", "muted", wrap=True))
         self.update_guess()
         return p
 
@@ -133,7 +137,22 @@ class SettingsPage(QWidget):
         common = set.intersection(*lists)
         return next(iter(common)) if len(common) == 1 else None
 
+    def update_found(self):
+        """The name and account id found in the game's traffic, when they were."""
+        acc = self.prefs.option("my_id")
+        self.found_text.setVisible(bool(acc))
+        if acc:
+            self.found_text.setText(f'Found in the game: "{self.prefs.option("my_name")}", account ID {acc}.')
+        if self.my_name.text() != self.prefs.option("my_name") and not self.my_name.hasFocus():
+            self.my_name.setText(self.prefs.option("my_name"))
+
     def update_guess(self):
+        self.update_found()
+        if self.prefs.option("my_id"):  # known from the game: no guessing
+            self.guess = None
+            self.guess_btn.hide()
+            self.guess_text.hide()
+            return
         g = self.guess_name()
         self.guess = g if g and g != self.prefs.option("my_name") else None
         self.guess_btn.setVisible(bool(self.guess))
