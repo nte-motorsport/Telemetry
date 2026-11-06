@@ -11,6 +11,7 @@ from ui.multiplayer_page import MultiplayerPage
 from ui.prefs import Prefs
 from ui.replays_page import ReplaysPage
 from ui.settings_page import SettingsPage
+from ui.vehicles import vehicles
 from ui.widgets import Backdrop, Button
 
 LIVE, MULTIPLAYER, REPLAYS, SETTINGS = 0, 1, 2, 3
@@ -61,6 +62,10 @@ class MainWindow(QMainWindow):
         self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)], store)
         self.set_me()
         self.settings.maps_changed.connect(self.replays.pick_map)  # Live and Multiplayer look every few seconds
+        # car names from the NTE Motorsport database, fetched anew at each start (ui/vehicles.py)
+        vehicles().changed.connect(lambda: self.replays.set_me(self.replays.me))
+        vehicles().changed.connect(lambda: self.multiplayer.racers.set_entrants(self.multiplayer.racers.entrants))
+        vehicles().refresh()
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
             self.pages.addWidget(p)
