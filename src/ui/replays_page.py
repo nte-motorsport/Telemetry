@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout, QWidget
 
-from ui import charts, theme
+from ui import charts, theme, units
 from ui.multiplayer_page import WINDOW, rival_color, segments
 from ui.tracks import track_name
 from ui.vehicles import car_name
@@ -81,14 +81,20 @@ class CarChip(QFrame):
             w.style().polish(w)
 
     def set_speed(self, v):
-        num = "–" if v is None or not np.isfinite(v) else f"{v:.0f}"
-        self.value.setText(f'{num}<span style="font-size:{theme.FS_MD}px; color:{theme.MUTED}">&nbsp;km/h</span>')
+        num = "–" if v is None or not np.isfinite(v) else units.speed_text(v)
+        self.value.setText(f'{num}<span style="font-size:{theme.FS_MD}px; color:{theme.MUTED}">'
+                           f'&nbsp;{units.speed_unit()}</span>')
+
+    def fit(self):
+        """Room for the widest speed in the unit chosen, in the font the style sheet gave it, so the chips don't
+        jiggle."""
+        digits = "8" * len(units.speed_text(888))  # three digits in km/h, "0.73" in Mach
+        unit = theme.font(theme.FS_MD)
+        self.value.setMinimumWidth(self.value.fontMetrics().horizontalAdvance(digits)
+                                   + QFontMetrics(unit).horizontalAdvance(" " + units.speed_unit()) + 4)
 
     def showEvent(self, ev):
-        # room for three digits, in the font the style sheet gave it, so the chips don't jiggle
-        unit = theme.font(theme.FS_MD)
-        self.value.setMinimumWidth(self.value.fontMetrics().horizontalAdvance("888")
-                                   + QFontMetrics(unit).horizontalAdvance(" km/h") + 4)
+        self.fit()
         super().showEvent(ev)
 
 
@@ -138,7 +144,8 @@ class ReplaysPage(QWidget):
         self.c_map = charts.MapChart(interactive=True)
         self.maps = MapPicker(all_maps())  # the game map under the tracks, see draw
         self.level = ""  # the open replay's world, if it was recorded
-        self.c_speed = charts.LineChart(clock, zero=True, xzoom=5.0, hover=lambda v: f"{v:.0f} km/h")
+        self.c_speed = charts.LineChart(clock, zero=True, xzoom=5.0,
+                                        hover=lambda v: f"{units.shown_text(v)} {units.speed_unit()}")
         self.c_speed.clicked.connect(lambda t: self.cars and self.seek(t))  # a click on the chart moves the timeline
         self.cursor = pg.InfiniteLine(angle=90, pen=pg.mkPen(theme.TEXT, width=1, style=Qt.DashLine))
         self.cursor.setOpacity(0.6)
@@ -332,8 +339,15 @@ class ReplaysPage(QWidget):
         """The speed chart, of the cars not hidden."""
         shown = [(n, c, a) for n, c, a in self.cars if n not in self.hidden]
         # nothing open: a minute, so the axis doesn't read 0:00 four times
-        self.c_speed.set_series([(a[:, 0], a[:, 4], c, 2.0 if n == "You" else 1.6) for n, c, a in shown],
+        self.c_speed.set_series([(a[:, 0], units.speed(a[:, 4]), c, 2.0 if n == "You" else 1.6) for n, c, a in shown],
                                 (0, self.duration if self.cars and self.duration > 0 else 60.0))
+
+    def set_units(self):
+        """Speeds in the unit now chosen (ui/units.py)."""
+        for chip in self.pool:
+            chip.fit()
+        self.plot()
+        self.seek(self.pos)
 
     def toggle_car(self, chip):
         self.hidden ^= {chip.name}

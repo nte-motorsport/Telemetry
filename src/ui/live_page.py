@@ -9,7 +9,7 @@ import windows
 from capture.live_source import LiveSource
 from capture.pcap import RawTap
 from capture.raw_socket import default_ip, local_ips
-from ui import charts, theme
+from ui import charts, theme, units
 from ui.world_map import MapPicker, all_maps
 from ui.widgets import Button, ChartGrid, Tile, card, label, legend_dot
 
@@ -256,6 +256,12 @@ class LivePage(QWidget):
         self.world.emit(level)
         self.tick()
 
+    def set_units(self):
+        """Speeds in the unit now chosen (ui/units.py)."""
+        for k in ("speed", "max"):
+            self.tiles[k].set_unit(units.speed_unit())
+        self.dirty = True
+
     def set_recording(self, on):
         self.rec.setVisible(on)
 
@@ -300,7 +306,7 @@ class LivePage(QWidget):
         d = self.last
         T = self.tiles
         if d:
-            T["speed"].set(f"{d['speed_kmh']:.0f}")
+            T["speed"].set(units.speed_text(d["speed_kmh"]))
             T["gl"].set(signed(d["g_long"]))
             T["ga"].set(signed(d["g_lat"]))
             T["yaw"].set(f"{d['yaw_rate']:.1f}")
@@ -308,7 +314,7 @@ class LivePage(QWidget):
             T["z"].set(f"{d['z']:.1f}")
             T["hdg"].set(f"{d['heading']:.0f}")
             T["odo"].set(f"{d['odo_km']:.2f}")
-            T["max"].set(f"{self.live_max:.0f}")
+            T["max"].set(units.speed_text(self.live_max))
         else:
             for t in T.values():
                 t.set("–")
@@ -320,7 +326,7 @@ class LivePage(QWidget):
         xr = (-LIVE_WINDOW, 0)
         shown = self.shown
         if "speed" in shown:
-            self.c_speed.set_series([(tx, col("speed_kmh"), theme.ACCENT, 2.2)], xr)
+            self.c_speed.set_series([(tx, units.speed(col("speed_kmh")), theme.ACCENT, 2.2)], xr)
         if "g" in shown:
             self.c_g.set_series([(tx, col("g_long"), theme.ACCENT, 1.8), (tx, col("g_lat"), LAT_COLOR, 1.8)], xr)
         if "z" in shown:

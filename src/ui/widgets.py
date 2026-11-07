@@ -87,12 +87,16 @@ class Tile(QFrame):
         self.value = label("–", "tileValueBig" if big else "tileValue")
         row.addWidget(self.value)
         # a bare degree sign sits up by the digits, like 312°; other units go on the baseline
-        row.addWidget(label(unit, "muted"), 0, Qt.AlignTop if unit == "°" else Qt.AlignBottom)
+        self.unit = label(unit, "muted")
+        row.addWidget(self.unit, 0, Qt.AlignTop if unit == "°" else Qt.AlignBottom)
         row.addStretch()
         lay.addLayout(row)
 
     def set(self, text):
         self.value.setText(text)
+
+    def set_unit(self, unit):
+        self.unit.setText(unit)
 
 
 def card(title, chart, legend=""):

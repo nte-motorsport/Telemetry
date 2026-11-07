@@ -1,5 +1,5 @@
 """The Settings page: a list of sections on the left, as the Replays page's races, and the chosen one beside it.
-Display: which charts the Live page shows and in what order. Network: the interface to capture on. Recording:
+Display: which charts the Live page shows and in what order, and the unit of speed. Network: the interface to capture on. Recording:
 online races. Plugins: the map packs."""
 import os
 
@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, Q
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from capture.raw_socket import local_ips
-from ui import theme, world_map
+from ui import theme, units, world_map
 from ui.widgets import Button, RowList, label, panel, scroll
 
 
@@ -51,7 +51,7 @@ class SettingsPage(QWidget):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
 
-        pages = [("Display", "The charts on the Live page", self.build_display(sections)),
+        pages = [("Display", "Charts and units", self.build_display(sections)),
                  ("Network", "Where the game's traffic is read", self.build_network()),
                  ("Recording", "Online races", self.build_recording()),
                  ("Plugins", "", self.build_plugins())]
@@ -88,9 +88,30 @@ class SettingsPage(QWidget):
             self.lists[page] = rows
             v.addWidget(p)
             self.fill(page)
+        v.addWidget(self.build_units())
         v.addWidget(self.build_me())
         v.addStretch()
         return body
+
+    def build_units(self):
+        """The unit speeds are shown in, on every page (ui/units.py)."""
+        p, pl = panel()
+        pl.addWidget(label("Units", "sectionTitle"))
+        row = QHBoxLayout()
+        row.setSpacing(theme.GAP)
+        row.addWidget(label("Speed", "muted"))
+        self.speed_unit = QComboBox()
+        self.speed_unit.setMinimumWidth(220)
+        for key, name in units.NAMES.items():
+            self.speed_unit.addItem(name, key)
+        self.speed_unit.setCurrentIndex(max(self.speed_unit.findData(self.prefs.option("speed_unit")), 0))
+        self.speed_unit.activated.connect(lambda _: self.prefs.set_option("speed_unit",
+                                                                          self.speed_unit.currentData()))
+        row.addWidget(self.speed_unit)
+        row.addStretch()
+        pl.addLayout(row)
+        pl.addWidget(label("Mach is to the speed of sound at sea level, 1225 km/h.", "muted", wrap=True))
+        return p
 
     def build_me(self):
         """The player's name in the game: the race server lists every entrant by name, and this is how the
