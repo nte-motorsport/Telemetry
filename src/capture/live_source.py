@@ -57,6 +57,7 @@ class LiveSource(QThread):
     failed = Signal(str, str)   # kind ("admin" | "error"), message
     level = Signal(str)         # the game world (UE level path) the game's server is on, "" while not known
     field = Signal(object)      # the race's entrants, see roster.Roster.field: [] while there are none
+    track = Signal(str)         # the race's track as its server names it (roster.TRACK), "" while not known
     names = Signal(object)      # {rival number: entrant's name} of the rivals known by name (capture/identity.py)
     player = Signal(str, str)   # the player's own name and account id (as text: it doesn't fit a C int), see
                                 # roster.ROLE: as soon as a server sends them
@@ -85,6 +86,7 @@ class LiveSource(QThread):
         self.rosters = {}
         self.identities = {}  # the same flows -> Identity: the cars their servers made
         self.entrants = []  # as last emitted
+        self.race_track = ""  # as last emitted
         self.named = {}     # as last emitted
         self.me = ""        # the player's name, see Identity.match: from the game (player), else as set
         self.role = None    # the player's own (account id, name), as last emitted
@@ -185,6 +187,10 @@ class LiveSource(QThread):
         if entrants != self.entrants:
             self.entrants = entrants
             self.field.emit(entrants)
+        track = r.track if r else ""
+        if track != self.race_track:
+            self.race_track = track
+            self.track.emit(track)
         # cars the game drives are a race's bots when the server named a field to race; in free roam (a world
         # shared with friends) they are its people and traffic, 20-30 of them, which aren't rivals
         self.opponents.allow_ai = len(entrants) >= 2

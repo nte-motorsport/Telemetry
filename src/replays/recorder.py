@@ -6,6 +6,7 @@ import time
 from PySide6.QtCore import QObject, Signal
 
 from capture.pcap import PcapWriter
+from replays.store import own_track
 
 
 class RaceRecorder(QObject):
@@ -27,6 +28,7 @@ class RaceRecorder(QObject):
         self.active = False
         self.world = ""  # the game world (UE level path) as last known
         self.entrants = []  # the race's entrants as last known (capture/roster.py): they come before the race
+        self.race_track = ""  # the race's track as last known (capture/roster.py): it too comes before
 
     def set_enabled(self, on):
         self.enabled = on
@@ -60,6 +62,11 @@ class RaceRecorder(QObject):
         if self.active and entrants:
             self.field = self.entrants  # the latest the race server named while the race went on
 
+    def set_track(self, track):
+        self.race_track = track
+        if self.active and track and not self.track:
+            self.track = track
+
     def set_names(self, names):
         if self.active:
             self.names.update(names)  # a name once matched stays: the capture forgets them at the finish
@@ -80,6 +87,7 @@ class RaceRecorder(QObject):
         self.names = {}  # rival number -> entrant's name, as the capture matched them
         self.level = self.world
         self.field = self.entrants
+        self.track = self.race_track
         self.last_rival = now
         if self.raw:
             try:
@@ -130,6 +138,9 @@ class RaceRecorder(QObject):
                       me=shift(self.me), rivals={k: shift(v) for k, v in self.rivals.items()})
         if self.level:
             replay["level"] = self.level
+        track = self.track or own_track(self.level)
+        if track:
+            replay["track"] = track
         if self.field:
             replay["field"] = self.field
         if self.names:
