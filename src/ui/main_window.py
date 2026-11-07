@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWi
 
 from replays.recorder import RaceRecorder
 from replays.store import ReplayStore
-from ui import theme
+from ui import theme, units
 from ui.live_page import LivePage
 from ui.multiplayer_page import MultiplayerPage
 from ui.prefs import Prefs
@@ -44,6 +44,8 @@ class MainWindow(QMainWindow):
         self.live.player.connect(self.on_player)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
+        units.set_speed_unit(self.prefs.option("speed_unit"))
+        self.live.set_units()
         self.prefs.changed.connect(self.on_prefs)
 
         store = replays or ReplayStore()
@@ -159,6 +161,7 @@ class MainWindow(QMainWindow):
             self.recorder.set_raw(self.prefs.option("raw_traffic"))
             self.live.set_raw(self.raw_wanted())
             self.set_me()
+            self.set_units()
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:
@@ -170,6 +173,13 @@ class MainWindow(QMainWindow):
         if (name, account) != (self.prefs.option("my_name"), self.prefs.option("my_id")):
             self.prefs.options["my_name"] = name  # one change, one save, one "options" signal
             self.prefs.set_option("my_id", account)
+
+    def set_units(self):
+        """Speeds in the unit chosen in Settings, if it changed."""
+        if units.set_speed_unit(self.prefs.option("speed_unit")):
+            self.live.set_units()
+            self.multiplayer.dirty = True
+            self.replays.set_units()
 
     def set_me(self):
         """The player's name, to mark them among the entrants."""

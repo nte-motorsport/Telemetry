@@ -6,7 +6,7 @@ from collections import deque
 import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from ui import charts, theme
+from ui import charts, theme, units
 from ui.world_map import MapPicker, all_maps
 from ui.widgets import RacersPanel, card
 
@@ -117,7 +117,7 @@ class MultiplayerPage(QWidget):
             tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5)
                        for s in segments(a)]
             markers.append((a[-1, 1], a[-1, 2], color))
-            series.append((a[:, 0] - now, a[:, 3], color, 2.2 if h is self.me else 1.8))
+            series.append((a[:, 0] - now, units.speed(a[:, 3]), color, 2.2 if h is self.me else 1.8))
         if now - self.map_at >= MAP_EVERY:
             self.map_at = now
             own = np.array(self.me, float).reshape(-1, 4)  # (t, x, y, km/h), the last minute
