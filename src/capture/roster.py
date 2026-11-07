@@ -28,6 +28,13 @@ GAP = [0, 0xFF00, 1, 0]  # the int16s between the slot and the name
 # of fixed size, so the id and the name are at fixed bits from the start of "RoleId" (its length): the same in
 # all 22 captures of 2026-11-04/06, which held no one else's. Account ids of players have 12 digits (2142...,
 # 2182...); bots' have 17.
+# The track of a race in the main world, as its race server names it a few seconds after connecting, before the
+# start, and again at the finish: a row of the game's DT_RaceTrack table, "Track003_02_pvp" (Hethereau Track 2),
+# as a UE string. The rows' names don't follow the tracks ("Track007_01_pvp" is New Herland Highway Track, not a
+# Horizon Tour one): ui/tracks.py looks them up. A race on a track of its own world (DLC_RT_...) doesn't name a row:
+# its level does (replays/recorder.py). Found in the races of 2026-11-07.
+TRACK = re.compile(rb"(Track(?:\d{3}_\d{2}(?:_pvp)?|_haoyou_\w{1,12}|999_\w{1,8}|_ZX_Quest\d))\x00")
+TRACK_MARK = b"Track"
 ROLE = b"RoleId\0"
 ROLE_ID, ROLE_NAME = 304, 672  # bits from the length of "RoleId"
 BOT = "AIRacer_"
@@ -69,18 +76,24 @@ def decode_role(n, nbits, bit):
 
 
 def decode(payload):
-    """([(slot, car id, name)], {bot's "AIRacer_..." name: its name}, the player's own (account id, name) or None)
-    for the records in one server packet."""
+    """([(slot, car id, name)], {bot's "AIRacer_..." name: its name}, the player's own (account id, name) or None,
+    the race's track (TRACK) or None) for the records in one server packet."""
     if b"ehicle" not in payload and len(payload) < 64:
-        return [], {}, None
+        return [], {}, None, None
     n = int.from_bytes(payload, "little")
     nbits = len(payload) * 8
-    entrants, bots, role = [], {}, None
+    entrants, bots, role, track = [], {}, None, None
     for k in range(8):  # the strings are at any bit: look at the packet shifted by each
         data = (n >> k).to_bytes(len(payload), "little") if k else payload
         i = data.find(ROLE)
         if i >= 0 and role is None:
             role = decode_role(n, nbits, 8 * (i - 4) + k)
+        if track is None and TRACK_MARK in data:
+            for m in TRACK.finditer(data):
+                text = m.group(1).decode("ascii")
+                if ue_string(n, 8 * (m.start() - 4) + k, nbits) == text:
+                    track = text
+                    break
         if b"ehicle" not in data:
             continue
         for m in CAR.finditer(data):
@@ -115,7 +128,7 @@ def decode(payload):
             name = ue_string(n, end + 112, nbits)
             if name:
                 entrants.append((slot, text, name))
-    return entrants, bots, role
+    return entrants, bots, role, track
 
 
 class Roster:
@@ -128,12 +141,15 @@ class Roster:
         self.first = {}
         self.bots = {}      # bot's "AIRacer_..." name -> its name
         self.role = None    # the player's own (account id, name), once the server has sent it
+        self.track = ""     # the race's track (a row of DT_RaceTrack), once the server has named it
 
     def update(self, payload):
         """Take one server packet; True if the field changed."""
-        entrants, bots, role = decode(payload)
+        entrants, bots, role, track = decode(payload)
         if role:
             self.role = role
+        if track:
+            self.track = track
         changed = False
         for slot, car, name in entrants:
             if name not in self.first:

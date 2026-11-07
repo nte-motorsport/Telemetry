@@ -70,6 +70,7 @@ class LivePage(QWidget):
     jumped = Signal()        # teleported: what came before is another place
     world = Signal(str)      # the game world (UE level path), "" while not known
     field = Signal(object)   # the race's entrants, passed on from the capture (capture/roster.py)
+    track = Signal(str)      # the race's track (a DT_RaceTrack row), passed on from the capture; "" while not known
     names = Signal(object)   # {rival number: name}, passed on from the capture (capture/identity.py)
     player = Signal(str, str)  # the player's own name and account id, passed on from the capture
     CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
@@ -177,6 +178,7 @@ class LivePage(QWidget):
         self.source.failed.connect(self.on_failed)
         self.source.level.connect(self.on_level)
         self.source.field.connect(self.field)
+        self.source.track.connect(self.track)
         self.source.names.connect(self.names)
         self.source.player.connect(self.player)
         self.source.me = self.me
@@ -190,10 +192,12 @@ class LivePage(QWidget):
             self.source.rivals.disconnect()
             self.source.level.disconnect()
             self.source.field.disconnect()
+            self.source.track.disconnect()
             self.source.names.disconnect()
             self.source.player.disconnect()
             self.on_level("")
             self.field.emit([])
+            self.track.emit("")
             self.names.emit({})
             self.source.stop()
             self.source = None

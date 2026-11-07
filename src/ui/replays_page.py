@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSl
 
 from ui import charts, theme
 from ui.multiplayer_page import WINDOW, rival_color, segments
+from ui.tracks import track_name
 from ui.vehicles import car_name
 from ui.widgets import Button, RowList, card, label, panel, shown_name
 from ui.world_map import MapPicker, all_maps
@@ -193,11 +194,14 @@ class ReplaysPage(QWidget):
         self.list.blockSignals(True)
         self.list.clear()
         for path, m in self.store.list():
+            # each race by its track, when it is known (replays from 2026-11-07 on, and races on a track of its own
+            # world), and when it was under it
             when = datetime.datetime.fromisoformat(m["started"]).strftime("%d %b %Y, %H:%M")
-            rivals = f'{m["rivals"]} rival' + ("" if m["rivals"] == 1 else "s")
+            track = track_name(m.get("track"))
             raw = "   ·   raw traffic" if m.get("raw") else ""
-            it = self.list.add_row(when, f"{clock(m['duration'])}   ·   {rivals}{raw}", path)
-            it.setData(Qt.UserRole + 1, when)
+            details = (f"{when}   ·   " if track else "") + clock(m["duration"]) + raw
+            it = self.list.add_row(track or when, details, path)
+            it.setData(Qt.UserRole + 1, f"{track}, {when}" if track else when)
         self.list.blockSignals(False)
         n = self.list.count()
         self.empty.setText("" if n else "No races yet. Online races are recorded automatically "

@@ -11,6 +11,7 @@ from ui.multiplayer_page import MultiplayerPage
 from ui.prefs import Prefs
 from ui.replays_page import ReplaysPage
 from ui.settings_page import SettingsPage
+from ui.tracks import tracks
 from ui.vehicles import vehicles
 from ui.widgets import Backdrop, Button
 
@@ -54,6 +55,7 @@ class MainWindow(QMainWindow):
         self.live.jumped.connect(self.recorder.finish)  # a new race or a test drive
         self.live.world.connect(self.recorder.set_world)
         self.live.field.connect(self.recorder.set_field)
+        self.live.track.connect(self.recorder.set_track)
         self.live.names.connect(self.recorder.set_names)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
@@ -66,6 +68,8 @@ class MainWindow(QMainWindow):
         vehicles().changed.connect(lambda: self.replays.set_me(self.replays.me))
         vehicles().changed.connect(lambda: self.multiplayer.racers.set_entrants(self.multiplayer.racers.entrants))
         vehicles().refresh()
+        tracks().changed.connect(lambda: self.replays.refresh())  # track names, the same way (ui/tracks.py)
+        tracks().refresh()
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
             self.pages.addWidget(p)
