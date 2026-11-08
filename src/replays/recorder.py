@@ -29,6 +29,9 @@ class RaceRecorder(QObject):
         self.world = ""  # the game world (UE level path) as last known
         self.entrants = []  # the race's entrants as last known (capture/roster.py): they come before the race
         self.race_track = ""  # the race's track as last known (capture/roster.py): it too comes before
+        # the player's own (name, account id) as last known: the account a race is driven on, which may not be the
+        # one driven on later
+        self.player = ("", "")
 
     def set_enabled(self, on):
         self.enabled = on
@@ -67,6 +70,11 @@ class RaceRecorder(QObject):
         if self.active and track and not self.track:
             self.track = track
 
+    def set_player(self, name, account):
+        self.player = (name or "", account or "")
+        if self.active and name:
+            self.racer = self.player  # the race server names the player as it connects: the latest is this race's
+
     def set_names(self, names):
         if self.active:
             self.names.update(names)  # a name once matched stays: the capture forgets them at the finish
@@ -85,6 +93,7 @@ class RaceRecorder(QObject):
         self.me, self.rivals, self.last_t = [], {}, {}
         self.bots = {}  # rival number -> tally of its updates with the AI flag (+1) and without (-1)
         self.names = {}  # rival number -> entrant's name, as the capture matched them
+        self.racer = self.player
         self.level = self.world
         self.field = self.entrants
         self.track = self.race_track
@@ -145,6 +154,8 @@ class RaceRecorder(QObject):
             replay["field"] = self.field
         if self.names:
             replay["names"] = {str(n): name for n, name in sorted(self.names.items())}
+        if self.racer[0]:
+            replay["player"] = dict(name=self.racer[0], id=self.racer[1])
         bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
         if bots:
             replay["bots"] = bots

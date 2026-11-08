@@ -8,7 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsItem
 
-from ui import theme
+from ui import theme, units
 from ui.world_map import MapImage
 
 pg.setConfigOptions(antialias=True, background=None, foreground=theme.MUTED)
@@ -142,10 +142,6 @@ def nice_step(span, n):
     return (1 if f < 1.5 else 2 if f < 3 else 5 if f < 7 else 10) * p
 
 
-def dist_fmt(v):
-    return f"{v / 1000:.1f} km" if abs(v) >= 1000 else f"{v:.0f} m"
-
-
 def speed_color(v):
     """The accent yellow (slow) to the danger red (fast), 0..250 km/h."""
     t = max(0.0, min(1.0, v / 250))
@@ -194,7 +190,7 @@ class ScaleAxis(Axis):
         w = self.geometry().width()
         if x1 <= x0 or w <= 0:
             return
-        size = nice_step((x1 - x0) * 0.8, 4)
+        size, text = units.scale((x1 - x0) * 0.8, lambda span: nice_step(span, 4))  # in the units chosen
         length = size / (x1 - x0) * w
         r = self.boundingRect()
         y = r.top() + 12
@@ -204,7 +200,7 @@ class ScaleAxis(Axis):
         for x in (0, length):  # end ticks, as on a ruler
             p.drawLine(QPointF(x, y - 4), QPointF(x, y + 4))
         p.setFont(self.style["tickFont"])
-        p.drawText(QRectF(length + 8, r.top(), 200, r.height()), Qt.AlignLeft | Qt.AlignVCenter, dist_fmt(size))
+        p.drawText(QRectF(length + 8, r.top(), 200, r.height()), Qt.AlignLeft | Qt.AlignVCenter, text)
 
 
 class BaseChart(pg.PlotWidget):

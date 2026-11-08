@@ -2,10 +2,11 @@
 import html
 import math
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPixmap
-from PySide6.QtWidgets import (QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPalette, QPixmap
+from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListView,
+                               QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStyledItemDelegate,
+                               QVBoxLayout, QWidget)
 
 from ui import theme
 
@@ -268,6 +269,21 @@ def shown_name(name, bot):
     return f":{name}:" if bot else name
 
 
+# how racers are named over their markers on the map (Settings > Display)
+MAP_NAMES = {"full": "Full names", "short": "Three letters, as in races", "off": "Hidden"}
+
+
+def map_name(name, bot, mode):
+    """A racer's name as written on the map in mode (a key of MAP_NAMES): in full (a bot's between colons), or as
+    its first three letters or digits in capitals, bots' too, as the game shows them ("liubquanti" -> "LIU",
+    "я Ваня" -> "ЯВА"); "" for none."""
+    if mode == "off" or not name:
+        return ""
+    if mode == "short":
+        return "".join(ch for ch in name if ch.isalnum())[:3].upper() or name[:3]
+    return shown_name(name, bot)
+
+
 def scroll(widget):
     s = QScrollArea()
     s.setWidgetResizable(True)
@@ -298,3 +314,60 @@ class Backdrop(QWidget):
             self.cache = pm.copy(x, y, self.width(), self.height())
         p.drawPixmap(0, 0, self.cache)
         p.fillRect(self.rect(), QColor(0, 0, 0, 128))
+
+
+class ChosenDelegate(QStyledItemDelegate):
+    """A Select's options, the chosen one in the accent colour, under the pointer too."""
+
+    def __init__(self, select):
+        super().__init__(select)
+        self.select = select
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if index.row() == self.select.currentIndex():
+            for role in (QPalette.Text, QPalette.HighlightedText):
+                option.palette.setColor(role, QColor(theme.ACCENT))
+
+
+class Select(QComboBox):
+    """A drop-down list as the NTE Motorsport sites have them (Rivals' SelectField): opened, the field and its
+    list are one shape, the same border and background, the field's corners squared off where the list goes on
+    (below, or above when there is no room below); the chevron turns over, and the chosen option is in the
+    accent colour, with no tick. The looks are in theme.STYLE, keyed on the "open" property ("down" / "up")."""
+    MAX_ITEMS = 8  # options shown before the list scrolls
+
+    def __init__(self):
+        super().__init__()
+        self.setView(QListView())
+        self.setItemDelegate(ChosenDelegate(self))  # the style sheet's ::item rules, not the menu look
+        # the app's font, set here: a font-size in the style sheet would make the list's font anew from Windows' own
+        # for lists (Segoe UI), and the fallback list of theme.font with it
+        self.view().setFont(theme.font(theme.FS_MD))
+        self.setMaxVisibleItems(self.MAX_ITEMS)
+        self.setCursor(Qt.PointingHandCursor)
+        self.view().setCursor(Qt.PointingHandCursor)
+        pop = self.view().window()  # the list's own window: frameless and see-through, so its corners can round
+        pop.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        pop.setAttribute(Qt.WA_TranslucentBackground)
+
+    def showPopup(self):
+        super().showPopup()
+        pop = self.view().window()
+        top = self.mapToGlobal(QPoint(0, 0))
+        screen = (self.screen() or pop.screen()).availableGeometry()
+        h = pop.height()
+        below = top.y() + self.height() + h <= screen.bottom()
+        pop.setGeometry(top.x(), top.y() + self.height() if below else top.y() - h, self.width(), h)
+        self.set_open("down" if below else "up")
+
+    def hidePopup(self):
+        super().hidePopup()
+        self.set_open("")
+
+    def set_open(self, how):
+        for w in (self, self.view()):
+            w.setProperty("open", how)
+            w.style().unpolish(w)
+            w.style().polish(w)
+

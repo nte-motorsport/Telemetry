@@ -12,6 +12,14 @@ SPEEDS = {
 NAMES = {"kmh": "Kilometres per hour (km/h)", "ms": "Metres per second (m/s)", "mph": "Miles per hour (mph)",
          "kn": "Knots (kn)", "mach": "Mach"}
 DEFAULT = "kmh"
+# the units of distance that go with each unit of speed: (short, metres in one), (long, metres in one). Knots and Mach
+# are the sea's and the air's: feet and nautical miles
+SYSTEMS = {
+    "metric": (("m", 1.0), ("km", 1000.0)),
+    "imperial": (("ft", 0.3048), ("mi", 1609.344)),
+    "nautical": (("ft", 0.3048), ("nmi", 1852.0)),
+}
+SYSTEM = {"kmh": "metric", "ms": "metric", "mph": "imperial", "kn": "nautical", "mach": "nautical"}
 
 _speed = DEFAULT
 
@@ -41,3 +49,39 @@ def speed_text(kmh):
 def shown_text(v):
     """A speed already in the chosen unit (a chart's value) as written, without the unit."""
     return f"{v:.{SPEEDS[_speed][2]}f}"
+
+
+def _system():
+    return SYSTEMS[SYSTEM[_speed]]
+
+
+def height_unit():
+    """The unit heights (altitude) are shown in: "m" or "ft"."""
+    return _system()[0][0]
+
+
+def height(m):
+    """A height (a number or an array) in metres, in the unit of the chosen system."""
+    return m / _system()[0][1]
+
+
+def distance_unit():
+    """The unit distances driven are shown in: "km", "mi" or "nmi"."""
+    return _system()[1][0]
+
+
+def distance(m):
+    """A distance in metres, in the long unit of the chosen system."""
+    return m / _system()[1][1]
+
+
+def scale(span_m, nice):
+    """A map scale bar for a view span_m metres across: (its length in metres, as written). nice(span) is a round
+    length under span; the bar is round in feet or metres while it is shorter than a mile or kilometre, else in
+    the long unit."""
+    (short, fs), (long, fl) = _system()
+    size = nice(span_m / fs)
+    if size * fs < fl:
+        return size * fs, f"{size:g} {short}"
+    size = nice(span_m / fl)
+    return size * fl, f"{size:g} {long}"

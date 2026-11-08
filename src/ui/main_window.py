@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.live.names.connect(self.recorder.set_names)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
+        self.replays.set_map_names(self.prefs.option("map_names"))
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
         self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)], store)
@@ -162,6 +163,7 @@ class MainWindow(QMainWindow):
             self.live.set_raw(self.raw_wanted())
             self.set_me()
             self.set_units()
+            self.replays.set_map_names(self.prefs.option("map_names"))
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:
@@ -185,6 +187,7 @@ class MainWindow(QMainWindow):
         """The player's name, to mark them among the entrants."""
         for page in (self.live, self.multiplayer, self.replays):
             page.set_me(self.prefs.option("my_name"))
+        self.recorder.set_player(self.prefs.option("my_name"), self.prefs.option("my_id"))
 
     def raw_wanted(self):
         """Raw traffic is kept for races to be recorded with: only while both are on."""

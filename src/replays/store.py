@@ -8,7 +8,9 @@ A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            "bots": ["2", ...] (the rivals the game drives, from 2026-11-05 on; left out when there were none),
            "names": {"2": "...", ...} (the rivals' names, those the capture could match: from 2026-11-06 on),
            "track": "Track003_02_pvp" (the track, a row of the game's DT_RaceTrack table, when it was known: from
-           2026-11-07 on; ui/tracks.py names it)}
+           2026-11-07 on; ui/tracks.py names it),
+           "player": {"name": "...", "id": "214278201357"} (who drove "me": the account the race was driven on,
+           when it was known; from 2026-11-08 on. Its id is "" when only the name was known, set by hand)}
 with t in seconds from the start of the recording.
 
 Next to a replay, with the same name, may be its raw traffic: <name>.pcap.gz, every packet the capture saw while

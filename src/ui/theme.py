@@ -109,14 +109,28 @@ QPushButton[iconOnly="true"] {{ min-width: {CONTROL_HEIGHT - 4}px; max-width: {C
 QComboBox {{
     min-height: {CONTROL_HEIGHT - 4}px; max-height: {CONTROL_HEIGHT - 4}px; padding: 0 44px 0 10px;
     font-size: {FS_MD}px; background: rgba(0, 0, 0, 128); border: 2px solid {ACCENT}; border-radius: {RADIUS}px;
+    combobox-popup: 0;
 }}
 QComboBox:focus {{ border-color: {ACCENT_HOVER}; }}
 QComboBox::drop-down {{ border: none; width: 40px; }}
 QComboBox::down-arrow {{ image: url({asset("icons", "chevron-down-accent.svg")}); width: 20px; height: 20px; }}
 QComboBox QAbstractItemView {{
-    background: {MENU_BG}; border: 2px solid {ACCENT}; border-radius: {RADIUS}px; padding: 4px; outline: none;
-    selection-background-color: {ACCENT_DARK}; selection-color: {TEXT};
+    background: {MENU_BG}; border: 2px solid {ACCENT}; border-radius: {RADIUS}px; padding: 0 0 6px; outline: none;
 }}
+QComboBox QAbstractItemView::item {{ min-height: 30px; padding: 0 10px; border: none; }}
+QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected {{
+    background: rgba(251, 207, 77, 46);
+}}
+/* opened (widgets.Select): the field and its list one shape, joined where they meet, as on the sites */
+QComboBox[open="down"], QComboBox[open="up"] {{ background: {MENU_BG}; border-color: {ACCENT}; }}
+QComboBox[open="down"] {{ border-bottom-color: {MENU_BG}; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }}
+QComboBox[open="up"] {{ border-top-color: {MENU_BG}; border-top-left-radius: 0; border-top-right-radius: 0; }}
+QComboBox[open="down"]::down-arrow, QComboBox[open="up"]::down-arrow {{
+    image: url({asset("icons", "chevron-up-accent.svg")});
+}}
+QAbstractItemView[open="down"] {{ border-top: none; border-top-left-radius: 0; border-top-right-radius: 0; }}
+QAbstractItemView[open="up"] {{ border-bottom: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+                                 padding: 6px 0 0; }}
 
 QCheckBox::indicator, QRadioButton::indicator {{ width: 16px; height: 16px; border: 2px solid {ACCENT}; background: #000; }}
 QCheckBox::indicator {{ border-radius: 5px; }}
