@@ -1,15 +1,15 @@
 """The Settings page: a list of sections on the left, as the Replays page's races, and the chosen one beside it.
-Display: which charts the Live page shows and in what order, and the unit of speed. Network: the interface to capture on. Recording:
-online races. Plugins: the map packs."""
+Display: which charts the Live page shows and in what order, the unit of speed and how racers are named on the
+map. Network: the interface to capture on. Recording: online races. Plugins: the map packs."""
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox,
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox,
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from capture.raw_socket import local_ips
 from ui import theme, units, world_map
-from ui.widgets import Button, RowList, label, panel, scroll
+from ui.widgets import MAP_NAMES, Button, RowList, Select, label, panel, scroll
 
 
 def section_page(title, *intro):
@@ -89,6 +89,7 @@ class SettingsPage(QWidget):
             v.addWidget(p)
             self.fill(page)
         v.addWidget(self.build_units())
+        v.addWidget(self.build_map_names())
         v.addWidget(self.build_me())
         v.addStretch()
         return body
@@ -100,7 +101,7 @@ class SettingsPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(theme.GAP)
         row.addWidget(label("Speed", "muted"))
-        self.speed_unit = QComboBox()
+        self.speed_unit = Select()
         self.speed_unit.setMinimumWidth(220)
         for key, name in units.NAMES.items():
             self.speed_unit.addItem(name, key)
@@ -110,7 +111,29 @@ class SettingsPage(QWidget):
         row.addWidget(self.speed_unit)
         row.addStretch()
         pl.addLayout(row)
-        pl.addWidget(label("Mach is to the speed of sound at sea level, 1225 km/h.", "muted", wrap=True))
+        pl.addWidget(label("Distances follow the unit of speed: metres and kilometres with km/h and m/s, feet "
+                           "and miles with mph, feet and nautical miles with knots and Mach. Mach is to the speed "
+                           "of sound at sea level, 1225 km/h.", "muted", wrap=True))
+        return p
+
+    def build_map_names(self):
+        """How racers are named over their markers on the map (widgets.map_name)."""
+        p, pl = panel()
+        pl.addWidget(label("Map", "sectionTitle"))
+        row = QHBoxLayout()
+        row.setSpacing(theme.GAP)
+        row.addWidget(label("Racers' names", "muted"))
+        self.map_names = Select()
+        self.map_names.setMinimumWidth(220)
+        for key, name in MAP_NAMES.items():
+            self.map_names.addItem(name, key)
+        self.map_names.setCurrentIndex(max(self.map_names.findData(self.prefs.option("map_names")), 0))
+        self.map_names.activated.connect(lambda _: self.prefs.set_option("map_names", self.map_names.currentData()))
+        row.addWidget(self.map_names)
+        row.addStretch()
+        pl.addLayout(row)
+        pl.addWidget(label("Over each car's marker on the map of a replay. Three letters: the first three of the "
+                           "name in capitals, as the game shows them in a race.", "muted", wrap=True))
         return p
 
     def build_me(self):
@@ -222,7 +245,7 @@ class SettingsPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(theme.GAP)
         row.addWidget(label("Interface", "muted"))
-        self.network = QComboBox()
+        self.network = Select()
         self.network.setMinimumWidth(220)
         ips = local_ips()  # the default-route one first
         saved = self.prefs.option("network")

@@ -16,7 +16,7 @@ from ui import charts, theme, units
 from ui.multiplayer_page import WINDOW, rival_color, segments
 from ui.tracks import track_name
 from ui.vehicles import car_name
-from ui.widgets import Button, RowList, card, label, panel, shown_name
+from ui.widgets import Button, RowList, card, label, map_name, panel, shown_name
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -168,6 +168,8 @@ class ReplaysPage(QWidget):
         self.chip_row.addStretch()
         right.addLayout(self.chip_row)
         self.me = ""  # the player's name, written over their own marker
+        self.player = ""  # the open replay's player, when it has them: the account it was driven on
+        self.map_names = "full"  # how racers are named on the map, a key of widgets.MAP_NAMES
         self.field = []  # the open replay's entrants, when it has them (recorded since 2026-11-04)
         self.bots = set()  # names (as in self.cars) of the open replay's cars that bots drive
 
@@ -232,6 +234,7 @@ class ReplaysPage(QWidget):
         self.duration = 0.0
         self.level = ""
         self.field = []
+        self.player = ""
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -242,6 +245,7 @@ class ReplaysPage(QWidget):
                 self.duration = r["duration"]
                 self.level = r.get("level") or ""
                 self.field = r.get("field") or []
+                self.player = (r.get("player") or {}).get("name") or ""
                 bots = set(r.get("bots") or [])
                 names = r.get("names") or {}
                 field_bots = {e["name"] for e in self.field if e.get("bot")}
@@ -266,13 +270,27 @@ class ReplaysPage(QWidget):
 
     def about(self, name):
         """What the open replay's entrants say of the car under name: its model."""
-        who = self.me if name == "You" else name
+        who = self.driver() if name == "You" else name
         e = next((e for e in self.field if e["name"] == who), None)
         return car_name(e["car"]) if e else ""
 
     def label(self, name):
-        """The name of the car under name as written on its chip and over its marker on the map."""
-        return (self.me or "You") if name == "You" else shown_name(name, name in self.bots)
+        """The name of the car under name as written on its chip."""
+        return (self.driver() or "You") if name == "You" else shown_name(name, name in self.bots)
+
+    def map_label(self, name):
+        """The name of the car under name as written over its marker on the map, as Settings say."""
+        who = (self.driver() or "You") if name == "You" else name
+        return map_name(who, name in self.bots, self.map_names)
+
+    def set_map_names(self, mode):
+        self.map_names = mode
+        self.seek(self.pos)
+
+    def driver(self):
+        """The player's name in the open replay: the account it was driven on if it says, else the one set now
+        (replays before 2026-11-08)."""
+        return self.player or self.me
 
     def open_folder(self):
         """Explorer at the replays, with the open one selected."""
@@ -373,7 +391,7 @@ class ReplaysPage(QWidget):
             trail = a[i:j]
             if here:
                 trail = np.vstack([trail, now])
-                markers.append((now[0, 1], now[0, 2], c, self.label(n)))
+                markers.append((now[0, 1], now[0, 2], c, self.map_label(n)))
             tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2)
                        for s in segments(trail)]
         self.c_map.set_tracks(tracks, markers, self.area)
@@ -420,6 +438,13 @@ class ReplaysPage(QWidget):
         self.held = False
         self.play_btn.set_icon("player-play")
         self.play_btn.setToolTip("Play (Space)")
+
+    def hideEvent(self, ev):
+        # another tab opened: the replay pauses where it is, not plays on unseen (the window minimised is not
+        # that: its hide is spontaneous, and playing goes on)
+        if not ev.spontaneous():
+            self.stop()
+        super().hideEvent(ev)
 
     def step(self):
         now = time.monotonic()

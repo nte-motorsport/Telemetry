@@ -257,9 +257,11 @@ class LivePage(QWidget):
         self.tick()
 
     def set_units(self):
-        """Speeds in the unit now chosen (ui/units.py)."""
+        """Speeds, heights and distances in the units now chosen (ui/units.py)."""
         for k in ("speed", "max"):
             self.tiles[k].set_unit(units.speed_unit())
+        self.tiles["z"].set_unit(units.height_unit())
+        self.tiles["odo"].set_unit(units.distance_unit())
         self.dirty = True
 
     def set_recording(self, on):
@@ -311,9 +313,9 @@ class LivePage(QWidget):
             T["ga"].set(signed(d["g_lat"]))
             T["yaw"].set(f"{d['yaw_rate']:.1f}")
             T["slope"].set(f"{d['slope_deg']:.1f}")
-            T["z"].set(f"{d['z']:.1f}")
+            T["z"].set(f"{units.height(d['z']):.1f}")
             T["hdg"].set(f"{d['heading']:.0f}")
-            T["odo"].set(f"{d['odo_km']:.2f}")
+            T["odo"].set(f"{units.distance(d['odo_km'] * 1000):.2f}")
             T["max"].set(units.speed_text(self.live_max))
         else:
             for t in T.values():
@@ -330,7 +332,7 @@ class LivePage(QWidget):
         if "g" in shown:
             self.c_g.set_series([(tx, col("g_long"), theme.ACCENT, 1.8), (tx, col("g_lat"), LAT_COLOR, 1.8)], xr)
         if "z" in shown:
-            self.c_z.set_series([(tx, col("z"), Z_COLOR, 1.8)], xr)
+            self.c_z.set_series([(tx, units.height(col("z")), Z_COLOR, 1.8)], xr)
         if "yaw" in shown:
             self.c_yaw.set_series([(tx, col("yaw_rate"), YAW_COLOR, 1.8)], xr)
         if "map" in shown:
