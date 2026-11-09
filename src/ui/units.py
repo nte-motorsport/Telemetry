@@ -85,3 +85,12 @@ def scale(span_m, nice):
         return size * fs, f"{size:g} {short}"
     size = nice(span_m / fl)
     return size * fl, f"{size:g} {long}"
+
+
+def length_text(m):
+    """A distance in metres as written in the chosen system: in metres or feet under a kilometre, else in its long
+    unit to a tenth ("152 m", "2.8 km", "0.6 mi")."""
+    (short, fs), (long, fl) = _system()
+    if abs(m) < 1000:
+        return f"{abs(m) / fs:.0f} {short}"
+    return f"{abs(m) / fl:.1f} {long}"

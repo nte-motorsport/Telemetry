@@ -5,7 +5,7 @@ from collections import deque
 
 from PySide6.QtCore import QThread, Signal
 
-from capture import opponents
+from capture import opponents, progress
 from capture.identity import Identity
 from capture.levels import find_level
 from capture.roster import Roster
@@ -61,8 +61,11 @@ class LiveSource(QThread):
     names = Signal(object)      # {rival number: entrant's name} of the rivals known by name (capture/identity.py)
     player = Signal(str, str)   # the player's own name and account id (as text: it doesn't fit a C int), see
                                 # roster.ROLE: as soon as a server sends them
+    standings = Signal(object)  # how far along the track everyone is, see progress.Standings.snapshot; None when
+                                # a race is over (teleported away)
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
+    STANDINGS_EVERY = 0.25  # s between standings sent on
     BUSY = 300    # packets a second: the game sends up to ~120, so a flow this busy (a video stream) is
                   # something else and not worth decoding while looking for the game
 
@@ -72,6 +75,8 @@ class LiveSource(QThread):
         self._stop = False
         self.tracker = Tracker()
         self.opponents = opponents.Opponents()
+        self.progress = progress.Standings()
+        self.standings_at = -math.inf  # when they were last sent
         self.flow = None    # (client port, server port) of the game
         self.seen = -math.inf  # when it last carried a fix
         self.probes = {}    # flow -> Probe
@@ -123,6 +128,7 @@ class LiveSource(QThread):
             self.tracker, self.flow, self.probes = probe.tracker, flow, {}
             if had:
                 self.tracker.reset_motion()  # flags a jump: clears the charts and the rivals
+                self.new_race()
             self.seen = now
             return True
         r = self.tracker.pick(cands)
@@ -132,6 +138,9 @@ class LiveSource(QThread):
         if d:
             if d["jump"]:  # teleported: whoever was around is not any more
                 self.opponents = opponents.Opponents()
+                self.new_race()
+            else:
+                self.progress.own(now, d["x"], d["y"])
             self.sample.emit(d)
         if r is not None:
             self.seen = now
@@ -142,9 +151,24 @@ class LiveSource(QThread):
         me = self.tracker.prev
         if not me:
             return
+        t = time.monotonic() if t is None else t
         recs = [r for r in opponents.decode(payload) if math.dist(r[2], me[1:4]) < opponents.NEAR]
         if recs:
-            self.rivals.emit(self.opponents.update(time.monotonic() if t is None else t, recs, me[1:4]))
+            cars = self.opponents.update(t, recs, me[1:4])
+            self.progress.rivals(t, cars)
+            self.rivals.emit(cars)
+        places = progress.decode(payload)
+        if places:
+            self.progress.update(t, places)
+            if t - self.standings_at >= self.STANDINGS_EVERY:
+                self.standings_at = t
+                self.standings.emit(self.progress.snapshot())
+
+    def new_race(self):
+        """Teleported (a new race, or out of one): the standings start over."""
+        if self.progress.racers:
+            self.standings.emit(None)
+        self.progress = progress.Standings()
 
     def handle(self, sport, dport, payload, now):
         """One UDP datagram of the capture: (source port, destination port), payload, arrival time."""

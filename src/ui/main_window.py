@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self.live.world.connect(self.multiplayer.set_world)
         self.live.field.connect(self.multiplayer.set_field)
         self.live.names.connect(self.multiplayer.set_names)
+        self.live.standings.connect(self.multiplayer.set_standings)
         self.live.player.connect(self.on_player)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
         self.live.field.connect(self.recorder.set_field)
         self.live.track.connect(self.recorder.set_track)
         self.live.names.connect(self.recorder.set_names)
+        self.live.standings.connect(self.recorder.on_standings)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.replays.set_map_names(self.prefs.option("map_names"))
@@ -181,6 +183,7 @@ class MainWindow(QMainWindow):
         if units.set_speed_unit(self.prefs.option("speed_unit")):
             self.live.set_units()
             self.multiplayer.dirty = True
+            self.multiplayer.show_standings()
             self.replays.set_units()
 
     def set_me(self):

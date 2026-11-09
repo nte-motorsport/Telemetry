@@ -1,4 +1,5 @@
-"""The Multiplayer page: in an online race, everyone on one map and everyone's speed over the last minute."""
+"""The Multiplayer page: in an online race, everyone on one map and everyone's speed over the last minute, and who
+is where in the race."""
 import math
 import time
 from collections import deque
@@ -6,7 +7,7 @@ from collections import deque
 import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from ui import charts, theme, units
+from ui import charts, standings, theme, units
 from ui.world_map import MapPicker, all_maps
 from ui.widgets import RacersPanel, card
 
@@ -34,6 +35,8 @@ class MultiplayerPage(QWidget):
         self.me = deque()  # (t, x, y, speed km/h)
         self.rivals = {}   # number -> deque of (t, x, y, speed km/h or NaN)
         self.left = set()  # numbers no longer sent: their last minute stays until the next race
+        self.names = {}  # rival number -> entrant's name, as the capture matched them
+        self.snapshot = None  # how far along everyone is, as last sent (capture/progress.py), or None
         self.dirty = True
 
         v = QVBoxLayout(self)
@@ -79,13 +82,32 @@ class MultiplayerPage(QWidget):
     def set_field(self, entrants):
         """The race's entrants, from the capture."""
         self.racers.set_entrants(entrants)
+        self.show_standings()
 
     def set_names(self, names):
         """{rival number: name}, from the capture: each entrant in their car's colour."""
+        self.names = dict(names)
         self.racers.set_colors({name: rival_color(num) for num, name in names.items()})
+        self.show_standings()
 
     def set_me(self, name):
         self.racers.set_me(name)
+        self.show_standings()
+
+    def set_standings(self, snapshot):
+        """How far along everyone is (progress.Standings.snapshot), from the capture; None out of a race."""
+        self.snapshot = snapshot
+        self.show_standings()
+
+    def show_standings(self):
+        """Each entrant's place, gap and what's left, in their box (again when the unit changes)."""
+        s = self.snapshot
+        if not s:
+            self.racers.set_standings({})
+            return
+        named = standings.by_name(s["racers"], self.names, self.racers.me, self.racers.entrants)
+        mine = named.get("")
+        self.racers.set_standings({n: (r["place"], *standings.lines(r, mine, s["length"])) for n, r in named.items()})
 
     def set_world(self, level):
         """The game world (UE level path, "" while not known), from the capture."""
