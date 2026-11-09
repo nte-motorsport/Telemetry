@@ -73,6 +73,7 @@ class LivePage(QWidget):
     track = Signal(str)      # the race's track (a DT_RaceTrack row), passed on from the capture; "" while not known
     names = Signal(object)   # {rival number: name}, passed on from the capture (capture/identity.py)
     player = Signal(str, str)  # the player's own name and account id, passed on from the capture
+    standings = Signal(object)  # how far along everyone is, passed on from the capture (capture/progress.py)
     CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
               ("z", "Altitude"), ("yaw", "Yaw rate")]
 
@@ -181,6 +182,7 @@ class LivePage(QWidget):
         self.source.track.connect(self.track)
         self.source.names.connect(self.names)
         self.source.player.connect(self.player)
+        self.source.standings.connect(self.standings)
         self.source.me = self.me
         self.source.tap = self.raw
         self.source.start()
@@ -195,10 +197,12 @@ class LivePage(QWidget):
             self.source.track.disconnect()
             self.source.names.disconnect()
             self.source.player.disconnect()
+            self.source.standings.disconnect()
             self.on_level("")
             self.field.emit([])
             self.track.emit("")
             self.names.emit({})
+            self.standings.emit(None)
             self.source.stop()
             self.source = None
 

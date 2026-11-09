@@ -203,8 +203,9 @@ class RowList(QListWidget):
 
 
 class RacersPanel(QFrame):
-    """A race's entrants side by side: each one's name, car and whether it is the player or a bot, and the colour
-    of their car on the map and the charts once the capture has matched them (capture/identity.py)."""
+    """A race's entrants side by side: each one's name, car and whether it is the player or a bot, the colour of
+    their car on the map and the charts once the capture has matched them (capture/identity.py), and during a race
+    their place, how far ahead or behind they are and how much is left (capture/progress.py), in race order."""
 
     def __init__(self, title="Racers"):
         super().__init__()
@@ -220,6 +221,8 @@ class RacersPanel(QFrame):
         self.me = ""
         self.entrants = []
         self.colors = {}  # name -> colour of their car on the map and the charts
+        self.standings = {}  # name ("" for the player) -> (place, the place and gap, the share done and what's left)
+        self.boxes = {}  # name -> (its box, label of the place and gap, label of the rest), to set them in place
 
     def set_colors(self, colors):
         if colors != self.colors:
@@ -230,10 +233,30 @@ class RacersPanel(QFrame):
         self.me = name or ""
         self.set_entrants(self.entrants)
 
+    def set_standings(self, standings):
+        """{name, or "" for the player: (place, the place and gap, the share done and what's left)}; {} for none.
+        Written into the boxes as they are; they are put in race order when that changes."""
+        order = lambda st: sorted(st, key=lambda n: st[n][0])
+        reorder = order(standings) != order(self.standings)
+        self.standings = dict(standings)
+        if reorder:
+            self.set_entrants(self.entrants)
+            return
+        for name, (_, head, rest) in self.boxes.items():
+            st = self.standing(name)
+            head.setText(st[1] if st else "")
+            rest.setText(st[2] if st else "")
+            head.setVisible(bool(st))
+            rest.setVisible(bool(st))
+
+    def standing(self, name):
+        return self.standings.get("" if self.me and name == self.me else name)
+
     def set_entrants(self, entrants):
         """entrants: [dict(car, name, bot)] (capture/roster.py)"""
         from ui.vehicles import car_name
         self.entrants = list(entrants)
+        self.boxes = {}
         while self.row.count():
             w = self.row.takeAt(0).widget()
             if w:  # gone at once: deleteLater alone leaves it drawn where it was until the event loop runs
@@ -243,7 +266,9 @@ class RacersPanel(QFrame):
         if not self.entrants:
             self.row.addWidget(label("Not known yet: the race server names its entrants as the race loads.",
                                      "muted"))
-        for e in self.entrants:
+        # in race order while there is one (those not placed after, as they were)
+        placed = sorted(self.entrants, key=lambda e: self.standing(e["name"])[0] if self.standing(e["name"]) else 99)
+        for e in placed:
             box = QFrame()
             box.setProperty("role", "panel")
             b = QVBoxLayout(box)
@@ -260,6 +285,12 @@ class RacersPanel(QFrame):
             head.setTextFormat(Qt.RichText)
             b.addWidget(head)
             b.addWidget(label(car_name(e["car"]), "muted"))
+            st = self.standing(e["name"])
+            head, rest = label(st[1] if st else ""), label(st[2] if st else "", "muted")
+            for w in (head, rest):
+                w.setVisible(bool(st))
+                b.addWidget(w)
+            self.boxes[e["name"]] = (box, head, rest)
             self.row.addWidget(box)
         self.row.addStretch()
 

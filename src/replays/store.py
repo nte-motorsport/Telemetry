@@ -10,7 +10,11 @@ A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            "track": "Track003_02_pvp" (the track, a row of the game's DT_RaceTrack table, when it was known: from
            2026-11-07 on; ui/tracks.py names it),
            "player": {"name": "...", "id": "214278201357"} (who drove "me": the account the race was driven on,
-           when it was known; from 2026-11-08 on. Its id is "" when only the name was known, set by hand)}
+           when it was known; from 2026-11-08 on. Its id is "" when only the name was known, set by hand),
+           "progress": {"length": m or null, "racers": [{"who": "me" | "2" | null, "rows": [[t, share], ...]}, ...]}
+           (how far along the track each racer was, capture/progress.py: the share of the race done whenever it
+           changed, who the racer turned out to be, a rival's number or null when not known, and the track's length;
+           from 2026-11-09 on)}
 with t in seconds from the start of the recording.
 
 Next to a replay, with the same name, may be its raw traffic: <name>.pcap.gz, every packet the capture saw while

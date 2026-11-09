@@ -80,6 +80,9 @@ class Opponents:
     SELF_RECENT = 60  # ... a car's latest this many records (about 2 s)
     SELF_EVERY = 1.0  # s between looks, for a car already shown ...
     SELF_TIMES = 3    # ... and this many looks in a row that find it there make it the player's own car
+    # The player has one car, so while an echo already found keeps coming no other car is it: a rival bumper to
+    # bumper with the player (within 1 m of the player's own track for 3 s, 2026-11-09) was taken for a second
+    # echo and hidden for the rest of the race, while the real one was still being sent
     LAGS = np.arange(-0.1, 0.31, 0.02)  # s the echo may be behind the player's own fix on the local clock
     OWN_SPAN = 5.0    # s of the player's own positions kept for that
     MOVED = 20.0      # m from where an id was first seen before it counts as a car: some things in the
@@ -108,6 +111,7 @@ class Opponents:
         self.cars = {}
         self.nums = {}  # car id -> number, for as long as this object lives (one server)
         self.own_ids = set()  # car ids found to be the player's own car
+        self.own_at = -math.inf  # when a record of one of them last arrived
         self.ai = {}  # car id -> the game drives it, for every car shown, as when first shown
         self.track = deque()  # (local t, x, y) of the player's own positions, the last OWN_SPAN s
         self.allow_ai = True  # cars the game drives count: race bots. Not in free roam, where they are NPCs
@@ -158,6 +162,7 @@ class Opponents:
         that car's position was sent, on the local clock, bot whether the game drives it."""
         for cid, st, p, ai in records:
             if cid in self.own_ids:
+                self.own_at = t
                 continue
             car = self.cars.get(cid)
             if car is None:
@@ -204,6 +209,7 @@ class Opponents:
                     car["dists"].clear()
                     car["still"].clear()
                     car["recent"].clear()
+        echo = t - self.own_at <= self.TIMEOUT  # the player's own car is known and still sent
         out = {}
         for cid, car in list(self.cars.items()):
             h = car["hist"]
@@ -219,18 +225,18 @@ class Opponents:
                         continue
                 elif car["good"] < self.CONFIRM or not (car["moved"] or car["grid"]) or not car["dists"]:
                     continue  # not shown (yet): unconfirmed or never moved
-                elif statistics.median(car["dists"]) < self.SELF_DIST:
+                elif not echo and statistics.median(car["dists"]) < self.SELF_DIST:
                     car["held"] += 1  # the player's own car, by the look of it
                     if car["held"] >= self.SELF_HOLD:
                         self.own_ids.add(cid)
                         del self.cars[cid]
                     continue
-                elif self.on_own_track(car):
+                elif not echo and self.on_own_track(car):
                     self.own_ids.add(cid)
                     del self.cars[cid]
                     continue
                 car["num"] = self.nums.setdefault(cid, len(self.nums) + 1)
-            elif t - car["look"] >= self.SELF_EVERY:  # shown: the echo, missed at first?
+            elif not echo and t - car["look"] >= self.SELF_EVERY:  # shown: the echo, missed at first?
                 car["look"] = t
                 car["near"] = car["near"] + 1 if self.on_own_track(car) else 0
                 if car["near"] >= self.SELF_TIMES:

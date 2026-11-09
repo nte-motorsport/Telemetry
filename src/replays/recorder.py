@@ -79,6 +79,21 @@ class RaceRecorder(QObject):
         if self.active:
             self.names.update(names)  # a name once matched stays: the capture forgets them at the finish
 
+    def on_standings(self, snapshot):
+        """How far along everyone is (progress.Standings.snapshot): each racer's share of the race done whenever it
+        changes, and who they turned out to be."""
+        if not self.active or not snapshot:
+            return
+        if snapshot["length"]:
+            self.length = snapshot["length"]
+        for r in snapshot["racers"]:
+            racer = self.racers.setdefault(r["id"], dict(who=None, rows=[]))
+            if r["who"] is not None:
+                racer["who"] = "me" if r["who"] == "me" else str(r["who"])
+            t = round(r["t"] - self.t0, 3)
+            if not racer["rows"] or t > racer["rows"][-1][0]:
+                racer["rows"].append([t, round(r["share"], 6)])
+
     def set_world(self, level):
         self.world = level
         if self.active and level and not self.level:
@@ -93,6 +108,8 @@ class RaceRecorder(QObject):
         self.me, self.rivals, self.last_t = [], {}, {}
         self.bots = {}  # rival number -> tally of its updates with the AI flag (+1) and without (-1)
         self.names = {}  # rival number -> entrant's name, as the capture matched them
+        self.racers = {}  # racer id (capture/progress.py) -> dict(who, rows=[[t, share of the race done], ...])
+        self.length = None  # the track's length, m, as the capture measured it
         self.racer = self.player
         self.level = self.world
         self.field = self.entrants
@@ -156,6 +173,10 @@ class RaceRecorder(QObject):
             replay["names"] = {str(n): name for n, name in sorted(self.names.items())}
         if self.racer[0]:
             replay["player"] = dict(name=self.racer[0], id=self.racer[1])
+        if self.racers:
+            replay["progress"] = dict(length=self.length and round(self.length, 1),
+                                      racers=[dict(who=r["who"], rows=shift(r["rows"]))
+                                              for _, r in sorted(self.racers.items()) if r["rows"]])
         bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
         if bots:
             replay["bots"] = bots
