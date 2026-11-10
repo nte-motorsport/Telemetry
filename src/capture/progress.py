@@ -5,6 +5,9 @@ unlike the cars' positions (capture/opponents.py), which it stops sending for a 
 
 The list comes as numbered fields, each an 8-bit number followed by its value (the numbers of a list element i):
 
+  34 + 52 i   the racer's time at the finish, float32 in seconds (sent once, as the racer finishes)
+  36 + 52 i   one bit, sent with it now and then
+  38 + 52 i   a float32 of the racer's car (243.47 for every Vehicle026 the player drove, 267.26 for a Vehicle038)
   42 + 52 i   metres along the track, float32 in centimetres
   44 + 52 i   the share of the race done, float32 (0 .. 1)
 
@@ -17,6 +20,11 @@ drive where that rival was. On some tracks the metres start over a few seconds i
 (the metres gained over the share gained) is how far along a racer is. The 8-bit numbers leave room for four racers,
 as many as a race has (2026-11). The list may hold one more than the race's entrants: a car the game drives that is
 not one of them (DLC_RT_C1, 2026-11-09).
+
+The list is the race's results too (the race server's FRacingPlayerRankInfo, the same struct it sends in full, names
+and all, at the end of some races): as a racer finishes, its element's update carries its time, 34 ... 38, 42, 44 in a
+row. In 16 races of 2026-11-07/09 every finish time was the one the full results gave, to the millisecond, and the
+element's place the racer's place at the finish (the times rise with it), the finisher's share 1 or nearly (0.9989).
 
 The list says nothing of who is who. Standings follows each racer from one update to the next (they don't jump),
 tells the player by their own distance driven, and each rival by where its car was: on the player's own drive, the
@@ -39,9 +47,26 @@ def _f32(n, o):
     return struct.unpack("<f", struct.pack("<I", (n >> o) & 0xFFFFFFFF))[0]
 
 
+FINISHED = 0.95  # share of the race done at least of a racer whose finish time is taken
+
+
+def finish_time(n, metres_at, i):
+    """The finish time (s) sent right before element i's metres, whose number is at bit metres_at, or None."""
+    b = 52 * i
+    p = metres_at - 40 if (n >> (metres_at - 40)) & 0xFF == 40 + b else metres_at  # a field 40 may come between
+    p -= 40
+    if p < 0 or (n >> p) & 0xFF != 38 + b:
+        return None
+    p -= 49 if p >= 9 and (n >> (p - 9)) & 0xFF == 36 + b else 40  # the one-bit field 36, when it is sent
+    if p < 0 or (n >> p) & 0xFF != 34 + b:
+        return None
+    t = _f32(n, p + 8)
+    return t if math.isfinite(t) and 10 < t < 3600 else None
+
+
 def decode(payload):
-    """[(place, metres along the track, share of the race done)] of the list's elements in one server packet, place
-    being 1 for the leader."""
+    """[(place, metres along the track, share of the race done, finish time in s or None)] of the list's elements in
+    one server packet, place being 1 for the leader."""
     n = int.from_bytes(payload, "little")
     out = []
     for a in bits.find(payload, SHARE, 8, 40, len(payload) * 8 - 32):
@@ -54,7 +79,8 @@ def decode(payload):
         # the metres are at most the share of the track's length (under 50 km): chance matches seldom are
         if (math.isfinite(m) and math.isfinite(share) and 0 <= share <= 1.01 and 0 <= m <= share * 50000 + 50
                 and (after == 0 or 44 + 52 * i < after < 42 + 52 * RACERS)):
-            out.append((i + 1, m, share))
+            done = finish_time(n, q - 8, i) if share >= FINISHED else None
+            out.append((i + 1, m, share, done))
     return out
 
 
@@ -118,25 +144,31 @@ class Standings:
         # element of nought is no racer's: one now and then for a moment mid-race, and every one left at the finish
         # (2026-11-08/09), and not always quite nought
         going = any(r["hist"] and r["hist"][-1][1] > self.GOING for r in self.racers)
-        places = list({place: (place, m, share) for place, m, share in places
+        places = list({place: (place, m, share, done) for place, m, share, done in places
                        if place <= RACERS and not (going and share < 1e-3)}.values())
         if not places:
             return
         # as many racers as the list has places
-        while len(self.racers) < min(max(place for place, _, _ in places), RACERS):
-            self.racers.append(dict(hist=deque(), mark=None))
+        while len(self.racers) < min(max(place for place, _, _, _ in places), RACERS):
+            self.racers.append(dict(hist=deque(), mark=None, finish=None))
         # each element to the racer it carries on from: the way that moves them least from where they were heading
         # in all. Not each to the closest: a racer off the track may stand still in the list and then leap ahead
         # 240 m at once (DLC_RT_C2, 2026-11-08), right past another
+        # Racers that have finished all stand at the end, as alike as can be: one is told by the place it finished in,
+        # which its element keeps (and a finish just sent goes to a racer that hasn't one)
         guesses = [self.guess(r, t) for r in self.racers]
         best = None
         for to in itertools.permutations(range(len(self.racers)), len(places)):
-            cost = sum(abs(share - guesses[i]) if guesses[i] is not None else 0.01
-                       for (_, _, share), i in zip(places, to))
+            cost = sum((abs(share - guesses[i]) if guesses[i] is not None else 0.01)
+                       + (1.0 if self.racers[i]["finish"] and (done is not None or self.racers[i]["finish"][1] != place)
+                          else 0.0)
+                       for (place, _, share, done), i in zip(places, to))
             if best is None or cost < best[0]:
                 best = (cost, to)
-        for (_, m, share), i in zip(places, best[1]):
+        for (place, m, share, done), i in zip(places, best[1]):
             r = self.racers[i]
+            if done is not None:
+                r["finish"] = (done, place)
             h = r["hist"]
             if not h or t > h[-1][0]:
                 h.append((t, share))
@@ -253,14 +285,16 @@ class Standings:
         """dict(length=the track's length in m or None, racers=[dict(id, place, share, metres, who, t)]) in race
         order, id staying with one racer, share the share of the race done, metres how far along the track (None
         while the length isn't known), who "me", a rival's number or None while not known, t the local time the
-        racer's share was last sent."""
+        racer's share was last sent, finish the racer's time at the finish (s) and finish_place its place there, both
+        None until it has finished."""
         rows = []
         for i, r in enumerate(self.racers):
             if not r["hist"]:
                 continue
             t, share = r["hist"][-1]
+            done, at = r["finish"] or (None, None)
             rows.append(dict(id=i, share=share, metres=share * self.length if self.length else None,
-                             who="me" if i == self.me else self.who.get(i), t=t))
+                             who="me" if i == self.me else self.who.get(i), t=t, finish=done, finish_place=at))
         rows.sort(key=lambda r: -r["share"])
         for k, r in enumerate(rows):
             r["place"] = k + 1

@@ -32,6 +32,8 @@ class RaceRecorder(QObject):
         # the player's own (name, account id) as last known: the account a race is driven on, which may not be the
         # one driven on later
         self.player = ("", "")
+        self.rank_now = None  # the player's (rank, points) as last named (capture/ranking.py)
+        self.lobby_now = []  # the latest lobby's players as last known: they come some 10 s before the race server
 
     def set_enabled(self, on):
         self.enabled = on
@@ -90,9 +92,24 @@ class RaceRecorder(QObject):
             racer = self.racers.setdefault(r["id"], dict(who=None, rows=[]))
             if r["who"] is not None:
                 racer["who"] = "me" if r["who"] == "me" else str(r["who"])
+            if r.get("finish") is not None:
+                racer["finish"], racer["place"] = round(r["finish"], 3), r["finish_place"]
             t = round(r["t"] - self.t0, 3)
             if not racer["rows"] or t > racer["rows"][-1][0]:
                 racer["rows"].append([t, round(r["share"], 6)])
+
+    def set_rank(self, rank, points):
+        self.rank_now = (rank, points)
+        if self.active:
+            if self.rank_before is None:  # not known when the race began: the first named is the one before it
+                self.rank_before = self.rank_now
+            elif self.rank_now != self.rank_before:
+                self.rank_after = self.rank_now  # the finish names the points before the race, then after it
+
+    def set_lobby(self, lobby):
+        self.lobby_now = list(lobby)
+        if self.active and lobby:
+            self.lobby = self.lobby_now
 
     def set_world(self, level):
         self.world = level
@@ -114,6 +131,8 @@ class RaceRecorder(QObject):
         self.level = self.world
         self.field = self.entrants
         self.track = self.race_track
+        self.rank_before, self.rank_after = self.rank_now, None
+        self.lobby = self.lobby_now
         self.last_rival = now
         if self.raw:
             try:
@@ -174,9 +193,24 @@ class RaceRecorder(QObject):
         if self.racer[0]:
             replay["player"] = dict(name=self.racer[0], id=self.racer[1])
         if self.racers:
-            replay["progress"] = dict(length=self.length and round(self.length, 1),
-                                      racers=[dict(who=r["who"], rows=shift(r["rows"]))
-                                              for _, r in sorted(self.racers.items()) if r["rows"]])
+            racers = []
+            for _, r in sorted(self.racers.items()):
+                if r["rows"]:
+                    racer = dict(who=r["who"], rows=shift(r["rows"]))
+                    if r.get("finish") is not None:
+                        racer["finish"], racer["place"] = r["finish"], r["place"]
+                    racers.append(racer)
+            replay["progress"] = dict(length=self.length and round(self.length, 1), racers=racers)
+        if self.rank_before:
+            replay["rank"] = dict(before=list(self.rank_before))
+            if self.rank_after:
+                replay["rank"]["after"] = list(self.rank_after)
+        # the lobby the race was matched in: not one of an earlier race (a race in the main world may be matched before
+        # the capture began), so only when its players are the race's
+        names = {e["name"] for e in self.field}
+        lobby = [dict(e) for e in self.lobby if e["name"] in names]
+        if len(lobby) >= 2 and len(lobby) * 2 > len(self.lobby):
+            replay["lobby"] = lobby
         bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
         if bots:
             replay["bots"] = bots

@@ -61,9 +61,13 @@ class MainWindow(QMainWindow):
         self.live.track.connect(self.recorder.set_track)
         self.live.names.connect(self.recorder.set_names)
         self.live.standings.connect(self.recorder.on_standings)
+        self.live.rank.connect(self.recorder.set_rank)
+        self.live.lobby.connect(self.recorder.set_lobby)
         self.recorder.recording.connect(self.live.set_recording)
         self.replays = ReplaysPage(store)
         self.replays.set_map_names(self.prefs.option("map_names"))
+        self.replays.set_trails(self.prefs.option("map_trails"))
+        self.multiplayer.set_trails(self.prefs.option("map_trails"))
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
         self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)], store)
@@ -166,6 +170,8 @@ class MainWindow(QMainWindow):
             self.set_me()
             self.set_units()
             self.replays.set_map_names(self.prefs.option("map_names"))
+            self.replays.set_trails(self.prefs.option("map_trails"))
+            self.multiplayer.set_trails(self.prefs.option("map_trails"))
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:

@@ -37,6 +37,7 @@ class MultiplayerPage(QWidget):
         self.left = set()  # numbers no longer sent: their last minute stays until the next race
         self.names = {}  # rival number -> entrant's name, as the capture matched them
         self.snapshot = None  # how far along everyone is, as last sent (capture/progress.py), or None
+        self.trails = True  # each car's last minute drawn behind its marker on the map (Settings)
         self.dirty = True
 
         v = QVBoxLayout(self)
@@ -109,6 +110,11 @@ class MultiplayerPage(QWidget):
         mine = named.get("")
         self.racers.set_standings({n: (r["place"], *standings.lines(r, mine, s["length"])) for n, r in named.items()})
 
+    def set_trails(self, on):
+        """Draw each car's last minute behind its marker on the map, or the markers alone."""
+        self.trails = on
+        self.dirty = True
+
     def set_world(self, level):
         """The game world (UE level path, "" while not known), from the capture."""
         self.maps.set_level(level)
@@ -132,19 +138,24 @@ class MultiplayerPage(QWidget):
         now = time.monotonic()
         cars = [(theme.ACCENT, self.me)] + [(rival_color(n), h) for n, h in sorted(self.rivals.items())]
         tracks, markers, series = [], [], []
+        area = ([], [])  # where the cars have been: the view is fitted to it when the trails aren't drawn
         for color, h in cars:
             if not h:
                 continue
             a = np.array(h, float)
-            tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5)
-                       for s in segments(a)]
+            if self.trails:
+                tracks += [dict(x=s[:, 1], y=s[:, 2], color=color, width=3.5 if h is self.me else 2.5)
+                           for s in segments(a)]
+            else:
+                area[0].extend(a[:, 1])
+                area[1].extend(a[:, 2])
             markers.append((a[-1, 1], a[-1, 2], color))
             series.append((a[:, 0] - now, units.speed(a[:, 3]), color, 2.2 if h is self.me else 1.8))
         if now - self.map_at >= MAP_EVERY:
             self.map_at = now
             own = np.array(self.me, float).reshape(-1, 4)  # (t, x, y, km/h), the last minute
             self.c_map.set_backdrop(self.maps.update(own[:, 1], own[:, 2]))
-        self.c_map.set_tracks(tracks, markers)
+        self.c_map.set_tracks(tracks, markers, None if self.trails else area)
         self.c_speed.set_series(series, (-WINDOW, 0))
 
     def tick(self):

@@ -74,6 +74,8 @@ class LivePage(QWidget):
     names = Signal(object)   # {rival number: name}, passed on from the capture (capture/identity.py)
     player = Signal(str, str)  # the player's own name and account id, passed on from the capture
     standings = Signal(object)  # how far along everyone is, passed on from the capture (capture/progress.py)
+    rank = Signal(str, int)     # the player's rank and points, passed on from the capture (capture/ranking.py)
+    lobby = Signal(object)      # the latest lobby's players, passed on from the capture (capture/ranking.py)
     CHARTS = [("speed", "Speed"), ("g", "G-forces"), ("map", "Trajectory"), ("gg", "G-G diagram"),
               ("z", "Altitude"), ("yaw", "Yaw rate")]
 
@@ -183,6 +185,8 @@ class LivePage(QWidget):
         self.source.names.connect(self.names)
         self.source.player.connect(self.player)
         self.source.standings.connect(self.standings)
+        self.source.rank.connect(self.rank)
+        self.source.lobby.connect(self.lobby)
         self.source.me = self.me
         self.source.tap = self.raw
         self.source.start()
@@ -198,6 +202,8 @@ class LivePage(QWidget):
             self.source.names.disconnect()
             self.source.player.disconnect()
             self.source.standings.disconnect()
+            self.source.rank.disconnect()
+            self.source.lobby.disconnect()
             self.on_level("")
             self.field.emit([])
             self.track.emit("")
