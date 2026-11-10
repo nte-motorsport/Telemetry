@@ -1,5 +1,6 @@
 """The Replays page: recorded online races, each on a map and a speed chart with a timeline to scrub, and
-everyone's name, car, speed and place in the race at the timeline's position, where each car can be hidden."""
+everyone's name, car, points, speed and place in the race at the timeline's position, where each car can be hidden;
+and the race's result: everyone's time at the finish, and the player's rank and points before and after."""
 import datetime
 import html
 import os
@@ -10,7 +11,8 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout,
+                               QWidget)
 
 from ui import charts, standings, theme, units
 from ui.multiplayer_page import WINDOW, rival_color, segments
@@ -26,6 +28,25 @@ NUDGE = 0.1  # s the arrow keys step the timeline by
 def clock(s):
     s = max(0, int(s))
     return f"{s // 60}:{s % 60:02d}"
+
+
+def race_time(s):
+    """A time at the finish as the game writes one: 2:35.151."""
+    ms = round(s * 1000)
+    return f"{ms // 60000}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
+
+def rank_name(rank):
+    """A rank as written: "RacingRank_3_2" -> "Rank 3-2"."""
+    parts = rank.split("_")[1:]
+    return "Rank " + "-".join(parts) if parts else rank
+
+
+def points_change(before, after):
+    """The points won or lost, signed and coloured."""
+    d = after - before
+    color = theme.ACCENT if d > 0 else theme.DANGER if d < 0 else theme.MUTED
+    return f'<span style="color:{color}">{d:+d}</span>'
 
 
 class CarChip(QFrame):
@@ -104,6 +125,7 @@ class CarChip(QFrame):
         # and for the widest place line, so they don't as the race goes on either
         widest = "  ·  ".join(("P8", f"{units.length_text(888)} behind", "88% done",
                                f"{units.length_text(8888)} to go"))
+        widest = max(widest, "P8  ·  Finished in 88:88.888", key=self.standing.fontMetrics().horizontalAdvance)
         self.standing.setMinimumWidth(self.standing.fontMetrics().horizontalAdvance(widest) + 4)
 
     def showEvent(self, ev):
@@ -148,7 +170,25 @@ class ReplaysPage(QWidget):
         self.del_btn.clicked.connect(self.delete)
         btns.addWidget(self.del_btn, 1)
         ll.addLayout(btns)
-        h.addWidget(lp)
+        left = QVBoxLayout()
+        left.setSpacing(theme.GAP)
+        left.addWidget(lp, 1)
+        # the open race's result: everyone's time at the finish (replays from 2026-11-10 on), the player's rank and
+        # points before and after it
+        self.result_panel, rl = panel()
+        self.result_panel.setFixedWidth(300)
+        rl.addWidget(label("Result", "sectionTitle"))
+        self.rank_line = label("", wrap=True)
+        self.rank_line.setTextFormat(Qt.RichText)
+        rl.addWidget(self.rank_line)
+        self.result_grid = QGridLayout()
+        self.result_grid.setHorizontalSpacing(theme.GAP)
+        self.result_grid.setVerticalSpacing(4)
+        self.result_grid.setColumnStretch(1, 1)
+        rl.addLayout(self.result_grid)
+        self.result_panel.hide()
+        left.addWidget(self.result_panel)
+        h.addLayout(left)
 
         right = QVBoxLayout()
         right.setSpacing(theme.GAP)
@@ -183,12 +223,17 @@ class ReplaysPage(QWidget):
         self.me = ""  # the player's name, written over their own marker
         self.player = ""  # the open replay's player, when it has them: the account it was driven on
         self.map_names = "full"  # how racers are named on the map, a key of widgets.MAP_NAMES
+        self.trails = True  # each car's last minute drawn behind its marker on the map (Settings)
         self.field = []  # the open replay's entrants, when it has them (recorded since 2026-11-04)
         self.bots = set()  # names (as in self.cars) of the open replay's cars that bots drive
         # how far along the track each racer was (replays from 2026-11-09 on): (car name as in self.cars or None,
         # array of [t, share of the race done]), and the track's length (m, or None)
         self.progress = []
         self.length = None
+        self.finishes = {}  # car name as in self.cars -> (place, time at the finish in s) of the open replay
+        self.results = []  # (place, car name as in self.cars or None, time at the finish) of the open replay
+        self.rank = {}  # the player's rank and points before and after the open race, as the replay has them
+        self.lobby = {}  # name -> points before the race, of the players the open race was matched with
 
         tp, tl = panel(QHBoxLayout)
         self.play_btn = Button("Play", "player-play", icon_only=True)
@@ -254,6 +299,7 @@ class ReplaysPage(QWidget):
         self.player = ""
         self.progress = []
         self.length = None
+        self.finishes, self.results, self.rank, self.lobby = {}, [], {}, {}
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -278,6 +324,9 @@ class ReplaysPage(QWidget):
                             self.bots.add(who)
                         self.cars.append((who, rival_color(int(num)), a))
                 self.read_progress(r.get("progress"), names)
+                self.rank = r.get("rank") or {}
+                self.lobby = {e["name"]: e["points"] for e in r.get("lobby") or []}
+        self.show_result()
         self.draw()
 
     def read_progress(self, progress, names):
@@ -287,17 +336,28 @@ class ReplaysPage(QWidget):
         self.length = progress.get("length")
         cars = {n for n, _, _ in self.cars}
         for racer in progress.get("racers") or []:
-            if not racer.get("rows"):
-                continue
             who = racer.get("who")
             car = "You" if who == "me" else (names.get(who) or f"Rival {who}") if who else None
-            self.progress.append((car if car in cars else None, np.array(racer["rows"], float)))
+            car = car if car in cars else None
+            k = None
+            if racer.get("rows"):
+                self.progress.append((car, np.array(racer["rows"], float)))
+                k = len(self.progress) - 1
+            if racer.get("finish") is not None:  # (a racer of a replay filled in later may have no rows, only this)
+                self.results.append((racer["place"], k, car, racer["finish"]))
         # one racer not told apart and one rival's car without a racer: they are each other
         left = [k for k, (car, _) in enumerate(self.progress) if car is None]
         taken = {car for car, _ in self.progress}
         free = [n for n, _, _ in self.cars if n != "You" and n not in taken]
         if len(left) == 1 and len(free) == 1:
             self.progress[left[0]] = (free[0], self.progress[left[0]][1])
+        # each finish to its racer's car; a car two racers were taken for (each at some time) is neither's
+        cars_of = [car for car, _ in self.progress]
+        results = [(place, cars_of[k] if k is not None else car, done) for place, k, car, done in self.results]
+        named = cars_of + [car for _, k, car, _ in self.results if k is None]
+        twice = {c for c in named if c and named.count(c) > 1}
+        self.results = sorted((place, None if car in twice else car, done) for place, car, done in results)
+        self.finishes = {car: (place, done) for place, car, done in self.results if car}
 
     def standings_at(self, t):
         """{car name: what its chip says of its place at t}."""
@@ -306,11 +366,52 @@ class ReplaysPage(QWidget):
             if a[0, 0] <= t:  # after its last change it stays where it was
                 share = float(np.interp(t, a[:, 0], a[:, 1]))
                 racers.append(dict(car=car, share=share, metres=share * self.length if self.length else None))
-        racers.sort(key=lambda r: -r["share"])
+        # those finished in the order they finished (they all stand at the line), the rest by how far along they are
+        done = lambda r: r["share"] >= standings.FINISHED and r["car"] in self.finishes
+        racers.sort(key=lambda r: (0, self.finishes[r["car"]][0]) if done(r) else (1, -r["share"]))
         for k, r in enumerate(racers):
             r["place"] = k + 1
         mine = next((r for r in racers if r["car"] == "You"), None)
-        return {r["car"]: "  ·  ".join(standings.lines(r, mine, self.length)) for r in racers if r["car"]}
+        out = {}
+        for r in racers:
+            if r["car"]:
+                if done(r):  # how far ahead or behind means nothing once at the line
+                    out[r["car"]] = f"P{r['place']}  ·  Finished in {race_time(self.finishes[r['car']][1])}"
+                else:
+                    out[r["car"]] = "  ·  ".join(standings.lines(r, mine, self.length))
+        return out
+
+    def show_result(self):
+        """The open race's result in its panel: hidden for a replay that has none."""
+        while self.result_grid.count():
+            w = self.result_grid.takeAt(0).widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        before, after = self.rank.get("before"), self.rank.get("after")
+        if before and after:
+            rank = (rank_name(after[0]) if before[0] == after[0]
+                    else f"{rank_name(before[0])} → {rank_name(after[0])}")
+            self.rank_line.setText(f"{html.escape(rank)}<br>{before[1]} → {after[1]} points&nbsp;&nbsp;"
+                                   f"{points_change(before[1], after[1])}")
+        elif before:
+            self.rank_line.setText(f"{html.escape(rank_name(before[0]))}<br>{before[1]} points"
+                                   f'<br><span style="color:{theme.MUTED}">The points after the race '
+                                   f"weren't seen.</span>")
+        self.rank_line.setVisible(bool(before))
+        colors = {n: c for n, c, _ in self.cars}
+        best = self.results[0][2] if self.results and self.results[0][0] == 1 else None
+        for row, (place, car, done) in enumerate(self.results):
+            dot = f'<span style="color:{colors[car]}">&#9679;</span>&nbsp;' if car in colors else ""
+            who = label(dot + html.escape(self.label(car) if car else "Not told apart"), None if car else "muted")
+            who.setTextFormat(Qt.RichText)
+            gap = label(f"+{done - best:.3f}" if best is not None and place > 1 else "", "muted")
+            for col, w in enumerate((label(f"P{place}", "muted"), who, label(race_time(done)), gap)):
+                if col >= 2:
+                    w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.result_grid.addWidget(w, row, col)
+        self.result_panel.setVisible(bool(before or self.results))
 
     def set_me(self, name):
         self.me = name or ""
@@ -319,12 +420,17 @@ class ReplaysPage(QWidget):
                 chip.set_car(n, c, self.about(n), "You" if n == "You" else self.label(n))
                 chip.set_hidden(n in self.hidden)
             self.seek(self.pos)
+            self.show_result()
 
     def about(self, name):
-        """What the open replay's entrants say of the car under name: its model."""
+        """What the open replay's entrants say of the car under name: its model, and the driver's points before the
+        race when the replay has its lobby."""
         who = self.driver() if name == "You" else name
         e = next((e for e in self.field if e["name"] == who), None)
-        return car_name(e["car"]) if e else ""
+        parts = [car_name(e["car"])] if e else []
+        if who in self.lobby:
+            parts.append(f"{self.lobby[who]} pts")
+        return " · ".join(parts)
 
     def label(self, name):
         """The name of the car under name as written on its chip."""
@@ -334,6 +440,11 @@ class ReplaysPage(QWidget):
         """The name of the car under name as written over its marker on the map, as Settings say."""
         who = (self.driver() or "You") if name == "You" else name
         return map_name(who, name in self.bots, self.map_names)
+
+    def set_trails(self, on):
+        """Draw each car's last minute behind its marker on the map, or the markers alone."""
+        self.trails = on
+        self.seek(self.pos)
 
     def set_map_names(self, mode):
         self.map_names = mode
@@ -446,8 +557,9 @@ class ReplaysPage(QWidget):
             if here:
                 trail = np.vstack([trail, now])
                 markers.append((now[0, 1], now[0, 2], c, self.map_label(n)))
-            tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2)
-                       for s in segments(trail)]
+            if self.trails:
+                tracks += [dict(x=s[:, 1], y=s[:, 2], color=c, width=3 if n == "You" else 2)
+                           for s in segments(trail)]
         self.c_map.set_tracks(tracks, markers, self.area)
         self.cursor.setPos(self.pos)
         self.cursor.setVisible(bool(self.cars))

@@ -6,6 +6,7 @@ from collections import deque
 from PySide6.QtCore import QThread, Signal
 
 from capture import opponents, progress
+from capture.ranking import Ranking
 from capture.identity import Identity
 from capture.levels import find_level
 from capture.roster import Roster
@@ -63,6 +64,8 @@ class LiveSource(QThread):
                                 # roster.ROLE: as soon as a server sends them
     standings = Signal(object)  # how far along the track everyone is, see progress.Standings.snapshot; None when
                                 # a race is over (teleported away)
+    rank = Signal(str, int)     # the player's rank and points (capture/ranking.py), whenever a server names them anew
+    lobby = Signal(object)      # the latest lobby's players, see ranking.Ranking.lobby, as its records come in
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
     STANDINGS_EVERY = 0.25  # s between standings sent on
@@ -85,6 +88,8 @@ class LiveSource(QThread):
         # (source port, destination port) -> the level packets of that flow named: the server names it right
         # after connecting, before the flow is known to be the game's, so every flow is looked at
         self.levels = {}
+        # the same flows -> {level: times named} while their world is a guess (capture/levels.py), None once known
+        self.level_counts = {}
         self.world = ""  # as last emitted
         # (source port, destination port) -> the entrants its packets named; looked for only in flows that named a
         # level (the game's servers), as the race server sends them before the flow is known to be the game's
@@ -95,6 +100,7 @@ class LiveSource(QThread):
         self.named = {}     # as last emitted
         self.me = ""        # the player's name, see Identity.match: from the game (player), else as set
         self.role = None    # the player's own (account id, name), as last emitted
+        self.ranking = Ranking()  # the player's standing and the latest lobby, from any of the game's servers
         self.tap = None  # a pcap.PcapWriter that gets every captured packet (a race's raw traffic), or None
 
     def stop(self):
@@ -160,7 +166,8 @@ class LiveSource(QThread):
         places = progress.decode(payload)
         if places:
             self.progress.update(t, places)
-            if t - self.standings_at >= self.STANDINGS_EVERY:
+            # a finish at once: it may be the last the race server sends before the teleport away
+            if t - self.standings_at >= self.STANDINGS_EVERY or any(p[3] is not None for p in places):
                 self.standings_at = t
                 self.standings.emit(self.progress.snapshot())
 
@@ -172,11 +179,22 @@ class LiveSource(QThread):
 
     def handle(self, sport, dport, payload, now):
         """One UDP datagram of the capture: (source port, destination port), payload, arrival time."""
-        lv = find_level(payload)
-        if lv:
-            if len(self.levels) >= self.PROBES and (sport, dport) not in self.levels:
+        found = find_level(payload)
+        if found:
+            lv, sure = found
+            flow = (sport, dport)
+            if len(self.levels) >= self.PROBES and flow not in self.levels:
                 self.levels.clear()
-            self.levels[(sport, dport)] = lv
+                self.level_counts.clear()
+            if sure:  # the world itself: the levels inside it, named later, don't change it
+                self.levels[flow] = lv
+                self.level_counts[flow] = None
+            elif self.level_counts.get(flow, {}) is not None:
+                # no game mode seen (the capture began later): the level most named, as the world's cells stream
+                # in by the hundred, a building's a few at a time
+                counts = self.level_counts.setdefault(flow, {})
+                counts[lv] = counts.get(lv, 0) + 1
+                self.levels[flow] = max(counts, key=counts.get)
         if (sport, dport) in self.levels:
             r = self.rosters.get((sport, dport))
             if r is None:
@@ -188,6 +206,11 @@ class LiveSource(QThread):
                 self.role = r.role
                 self.me = r.role[1]
                 self.player.emit(r.role[1], str(r.role[0]))
+            rank_changed, lobby_changed = self.ranking.update(payload, now)
+            if rank_changed:
+                self.rank.emit(*self.ranking.rank)
+            if lobby_changed:
+                self.lobby.emit(list(self.ranking.lobby))
             ident = self.identities.get((sport, dport))
             if ident is None:
                 if len(self.identities) >= self.PROBES:

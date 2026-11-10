@@ -117,7 +117,8 @@ class SettingsPage(QWidget):
         return p
 
     def build_map_names(self):
-        """How racers are named over their markers on the map (widgets.map_name)."""
+        """How racers are named over their markers on the map (widgets.map_name), and whether their trails are
+        drawn."""
         p, pl = panel()
         pl.addWidget(label("Map", "sectionTitle"))
         row = QHBoxLayout()
@@ -134,6 +135,12 @@ class SettingsPage(QWidget):
         pl.addLayout(row)
         pl.addWidget(label("Over each car's marker on the map of a replay. Three letters: the first three of the "
                            "name in capitals, as the game shows them in a race.", "muted", wrap=True))
+        self.map_trails = QCheckBox("Trails behind the cars")
+        self.map_trails.setChecked(self.prefs.option("map_trails"))
+        self.map_trails.toggled.connect(lambda on: self.prefs.set_option("map_trails", on))
+        pl.addWidget(self.map_trails)
+        pl.addWidget(label("Each car's last minute, drawn behind its marker on the Multiplayer and Replays maps. "
+                           "Off, the maps show the markers alone.", "muted", wrap=True))
         return p
 
     def build_me(self):

@@ -14,7 +14,15 @@ A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            "progress": {"length": m or null, "racers": [{"who": "me" | "2" | null, "rows": [[t, share], ...]}, ...]}
            (how far along the track each racer was, capture/progress.py: the share of the race done whenever it
            changed, who the racer turned out to be, a rival's number or null when not known, and the track's length;
-           from 2026-11-09 on)}
+           from 2026-11-09 on. A racer that finished also has "finish": its time at the finish, s, as the race server
+           timed it, and "place": its place there; from 2026-11-10 on. A replay recorded before that with its raw
+           traffic may have had them filled in from it later: then a racer may have no rows, only these),
+           "rank": {"before": ["RacingRank_3_1", 8863], "after": ["RacingRank_3_2", 9038]} (the player's rank and
+           points before the race and after it, capture/ranking.py; "after" left out when the race didn't change them
+           or the capture missed it; from 2026-11-10 on),
+           "lobby": [{"name": "...", "id": "214278201357", "points": 8918, "car": "Vehicle026"}, ...] (the players
+           the race was matched with, the player among them, and their points before it; when the capture saw them:
+           not in every race of the main world; from 2026-11-10 on)}
 with t in seconds from the start of the recording.
 
 Next to a replay, with the same name, may be its raw traffic: <name>.pcap.gz, every packet the capture saw while
