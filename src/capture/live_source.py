@@ -5,7 +5,7 @@ from collections import deque
 
 from PySide6.QtCore import QThread, Signal
 
-from capture import opponents, progress
+from capture import opponents, progress, ranking
 from capture.ranking import Ranking
 from capture.identity import Identity
 from capture.levels import find_level
@@ -166,10 +166,21 @@ class LiveSource(QThread):
         places = progress.decode(payload)
         if places:
             self.progress.update(t, places)
+        waiting = self.progress.awaiting()
+        lone = waiting and self.progress.lone(t, progress.lone_finishes(payload, waiting))
+        if places or lone:
             # a finish at once: it may be the last the race server sends before the teleport away
-            if t - self.standings_at >= self.STANDINGS_EVERY or any(p[3] is not None for p in places):
+            if t - self.standings_at >= self.STANDINGS_EVERY or lone or any(p[3] is not None for p in places):
                 self.standings_at = t
                 self.standings.emit(self.progress.snapshot())
+
+    def take_ranking(self, payload, now):
+        """The player's standing and the lobby, from one packet of the game's servers."""
+        rank_changed, lobby_changed = self.ranking.update(payload, now)
+        if rank_changed:
+            self.rank.emit(*self.ranking.rank)
+        if lobby_changed:
+            self.lobby.emit(list(self.ranking.lobby))
 
     def new_race(self):
         """Teleported (a new race, or out of one): the standings start over."""
@@ -206,17 +217,17 @@ class LiveSource(QThread):
                 self.role = r.role
                 self.me = r.role[1]
                 self.player.emit(r.role[1], str(r.role[0]))
-            rank_changed, lobby_changed = self.ranking.update(payload, now)
-            if rank_changed:
-                self.rank.emit(*self.ranking.rank)
-            if lobby_changed:
-                self.lobby.emit(list(self.ranking.lobby))
+            self.take_ranking(payload, now)
             ident = self.identities.get((sport, dport))
             if ident is None:
                 if len(self.identities) >= self.PROBES:
                     self.identities.clear()
                 ident = self.identities[(sport, dport)] = Identity()
             ident.feed(payload)
+        elif ranking.named(payload):
+            # a server whose world wasn't named on this flow: the capture began after the game connected to it
+            # (2026-11-11: two lobbies of the world the player waited in were missed so)
+            self.take_ranking(payload, now)
         # the client's own movement goes to the game server, so the server's port is the destination
         server = self.flow[1] if self.flow else None
         flow = (sport, dport)

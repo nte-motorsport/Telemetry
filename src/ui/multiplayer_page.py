@@ -9,7 +9,9 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ui import charts, standings, theme, units
 from ui.world_map import MapPicker, all_maps
-from ui.widgets import RacersPanel, card
+from ui import ranks
+from ui.vehicles import car_name
+from ui.widgets import DriversPanel, TimingPanel, card
 
 WINDOW = 60  # seconds of tracks and speed shown
 MAP_EVERY = 2.0  # s between looks at which game map the tracks are on (while the world isn't known)
@@ -46,9 +48,18 @@ class MultiplayerPage(QWidget):
         h = QHBoxLayout()
         h.setSpacing(theme.GAP)
         v.addLayout(h, 1)
-        self.racers = RacersPanel()  # who races, from the race server (capture/roster.py)
+        # on the left: who is where in the race, and who they are (from the race server, capture/roster.py)
+        self.racers = TimingPanel()
         self.racers.set_entrants([])
-        v.addWidget(self.racers)
+        self.drivers = DriversPanel()
+        self.lobby = {}  # name -> rank points before the race, of the players the race was matched with
+        self.own_rank = None  # the player's own (rank row, points), as the server names them
+        left = QVBoxLayout()
+        left.setSpacing(theme.GAP)
+        left.addWidget(self.racers)
+        left.addWidget(self.drivers)
+        left.addStretch()
+        h.addLayout(left)
         self.c_map = charts.MapChart()
         self.maps = MapPicker(all_maps())  # the game map under the tracks: the world's, see set_world
         self.map_at = -1e9  # when the map was last looked at
@@ -95,20 +106,47 @@ class MultiplayerPage(QWidget):
         self.racers.set_me(name)
         self.show_standings()
 
+    def set_lobby(self, lobby):
+        """The players the latest race was matched with, from the capture (capture/ranking.py)."""
+        self.lobby = {e["name"]: e["points"] for e in lobby}
+        self.show_drivers()
+
+    def set_rank(self, rank, points):
+        """The player's own rank and points, from the capture."""
+        self.own_rank = (rank, points)
+        self.show_drivers()
+
+    def show_drivers(self):
+        """Each entrant in detail: the players, then the bots, each in alphabetical order (they stay put as places
+        change)."""
+        out = []
+        for e in sorted(self.racers.entrants, key=lambda e: (bool(e.get("bot")), e["name"].casefold())):
+            me = bool(self.racers.me) and e["name"] == self.racers.me
+            bot = bool(e.get("bot"))
+            points = None if bot else self.lobby.get(e["name"])
+            if me and self.own_rank:
+                rank, points = self.own_rank
+            else:
+                rank = ranks.from_points(points) if points is not None else None
+            out.append(dict(name=e["name"], bot=bot, car=car_name(e["car"]) if e.get("car") else "",
+                            color=theme.ACCENT if me else self.racers.colors.get(e["name"]), rank=rank, points=points))
+        self.drivers.set_racers(out)
+
     def set_standings(self, snapshot):
         """How far along everyone is (progress.Standings.snapshot), from the capture; None out of a race."""
         self.snapshot = snapshot
         self.show_standings()
 
     def show_standings(self):
-        """Each entrant's place, gap and what's left, in their box (again when the unit changes)."""
+        """Each entrant's place and how far behind the racer ahead, in their row."""
         s = self.snapshot
         if not s:
             self.racers.set_standings({})
+            self.show_drivers()
             return
         named = standings.by_name(s["racers"], self.names, self.racers.me, self.racers.entrants)
-        mine = named.get("")
-        self.racers.set_standings({n: (r["place"], *standings.lines(r, mine, s["length"])) for n, r in named.items()})
+        self.racers.set_standings({n: (r["place"], r["interval"], r["finish"] is not None) for n, r in named.items()})
+        self.show_drivers()
 
     def set_trails(self, on):
         """Draw each car's last minute behind its marker on the map, or the markers alone."""

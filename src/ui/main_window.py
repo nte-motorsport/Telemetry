@@ -42,6 +42,8 @@ class MainWindow(QMainWindow):
         self.live.field.connect(self.multiplayer.set_field)
         self.live.names.connect(self.multiplayer.set_names)
         self.live.standings.connect(self.multiplayer.set_standings)
+        self.live.rank.connect(self.multiplayer.set_rank)
+        self.live.lobby.connect(self.multiplayer.set_lobby)
         self.live.player.connect(self.on_player)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))

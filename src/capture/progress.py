@@ -25,6 +25,11 @@ The list is the race's results too (the race server's FRacingPlayerRankInfo, the
 and all, at the end of some races): as a racer finishes, its element's update carries its time, 34 ... 38, 42, 44 in a
 row. In 16 races of 2026-11-07/09 every finish time was the one the full results gave, to the millisecond, and the
 element's place the racer's place at the finish (the times rise with it), the finisher's share 1 or nearly (0.9989).
+The time may also come on its own, 34 and then another struct's fields: the player's own, 2026-11-11, 11 s after
+they crossed the line, their element's share stuck at 0.9937 since (only its metres sent, past the track's length).
+A lone time is taken only for an element 95% done and not finished, and only when it goes with the race's clock:
+a time at the finish arrives so many seconds after the race got under way, give or take a couple (finishers of
+2026-11-11 arrived 2.5 s before to 0 s after it, the list's leader passing 1% being when the race got under way).
 
 The list says nothing of who is who. Standings follows each racer from one update to the next (they don't jump),
 tells the player by their own distance driven, and each rival by where its car was: on the player's own drive, the
@@ -64,6 +69,35 @@ def finish_time(n, metres_at, i):
     return t if math.isfinite(t) and 10 < t < 3600 else None
 
 
+def fill_places(fixed, rest):
+    """[place] of racers: fixed, the places of those whose place is known (where they finished, None for the rest);
+    the rest take the places left, in the order of rest (indices into fixed, the best first). A finish time may
+    never come (2026-11-11: the player's own, P2, while P3's and P4's did), so a racer without one still goes
+    ahead of those who finished after it."""
+    out = list(fixed)
+    taken = {p for p in fixed if p is not None}
+    place = 1
+    for i in rest:
+        while place in taken:
+            place += 1
+        out[i] = place
+        taken.add(place)
+    return out
+
+
+def lone_finishes(payload, places):
+    """[(place, finish time in s)] of field 34 of the elements at places (a finish time sent without the rest of
+    its element; see finish_time for one sent with it) in one server packet. Chance matches are many: the caller
+    takes only one that goes with the race's clock."""
+    n = int.from_bytes(payload, "little")
+    out = []
+    for a in bits.find(payload, tuple(34 + 52 * (p - 1) for p in places), 8, 0, len(payload) * 8 - 40):
+        t = _f32(n, a + 8)
+        if math.isfinite(t) and 10 < t < 3600:
+            out.append(((((n >> a) & 0xFF) - 34) // 52 + 1, t))
+    return out
+
+
 def decode(payload):
     """[(place, metres along the track, share of the race done, finish time in s or None)] of the list's elements in
     one server packet, place being 1 for the leader."""
@@ -100,6 +134,7 @@ class Standings:
     OWN_DRIVEN = 150.0  # m driven over OWN_SPAN before that is looked at: standing on the grid, everyone fits
     OWN_TIMES = 3     # looks in a row that find another racer to be the player before it is taken to be
     LOOK = 1.0        # s between looks at who is who
+    CLOCK = (-6.0, 3.0)  # s: a lone finish time arrives this long after the race got under way plus the time, at most
     SAMPLES = 60      # positions of each car looked at, at most (one a second over the last minute)
     NEAR = 25.0       # m: a racer whose entry puts it within this of where a car was (median) may be that car
     VOTES = 3         # positions of a car that must be on the player's drive before it is told
@@ -115,6 +150,7 @@ class Standings:
         self.offset = 0.0  # the player's distance along the track minus their distance driven
         self.who = {}  # racer index -> rival number
         self.look = -math.inf
+        self.under_way = None  # local time the race got under way (the leader passed GOING)
 
     # ----- input -----
 
@@ -148,6 +184,8 @@ class Standings:
                        if place <= RACERS and not (going and share < 1e-3)}.values())
         if not places:
             return
+        if going and self.under_way is None:
+            self.under_way = t
         # as many racers as the list has places
         while len(self.racers) < min(max(place for place, _, _, _ in places), RACERS):
             self.racers.append(dict(hist=deque(), mark=None, finish=None))
@@ -167,6 +205,7 @@ class Standings:
                 best = (cost, to)
         for (place, m, share, done), i in zip(places, best[1]):
             r = self.racers[i]
+            r["at"] = place  # its element, for a finish time sent on its own
             if done is not None:
                 r["finish"] = (done, place)
             h = r["hist"]
@@ -186,6 +225,26 @@ class Standings:
             self.look = t
             self.find_me()
             self.find_rivals()
+
+    def awaiting(self):
+        """The places of the list's elements whose racer is near the end and hasn't finished: a finish time may come
+        for them on its own (lone_finishes)."""
+        if self.under_way is None:
+            return []
+        return [r["at"] for r in self.racers
+                if r.get("at") and not r["finish"] and r["hist"] and r["hist"][-1][1] >= FINISHED]
+
+    def lone(self, t, finishes):
+        """Finish times sent on their own (lone_finishes) at local time t: each taken for its element's racer when
+        it goes with the race's clock. True if any was."""
+        took = False
+        for place, done in finishes:
+            r = next((r for r in self.racers if r.get("at") == place and not r["finish"] and r["hist"]
+                      and r["hist"][-1][1] >= FINISHED), None)
+            if r and self.under_way is not None and self.CLOCK[0] <= t - done - self.under_way <= self.CLOCK[1]:
+                r["finish"] = (done, place)
+                took = True
+        return took
 
     def guess(self, r, t):
         """The share of the race racer r is likely to have done at t, from its latest updates; None for a racer not
@@ -277,6 +336,12 @@ class Standings:
         for i, num in self.who.items():
             if i not in used and num not in taken and i != self.me:
                 who[i] = num
+        # two rivals side by side swapped: one racer and one car left over are each other (else the racer would go
+        # unnamed while its car is told apart from the other, 2026-11-11: two bots within a second all race long)
+        racers = [i for i in range(len(self.racers)) if i != self.me and i not in who]
+        cars = [num for num in self.cars if num not in who.values()]
+        if len(racers) == 1 and len(cars) == 1 and len(self.who) >= len(who):
+            who[racers[0]] = cars[0]
         self.who = who
 
     # ----- output -----
@@ -286,7 +351,9 @@ class Standings:
         order, id staying with one racer, share the share of the race done, metres how far along the track (None
         while the length isn't known), who "me", a rival's number or None while not known, t the local time the
         racer's share was last sent, finish the racer's time at the finish (s) and finish_place its place there, both
-        None until it has finished."""
+        None until it has finished, interval how many seconds after the racer ahead it got where it is (None for the
+        leader and when not known; see interval). Those finished at the places they finished in, the rest in the
+        places left by how far along they are (fill_places)."""
         rows = []
         for i, r in enumerate(self.racers):
             if not r["hist"]:
@@ -295,7 +362,28 @@ class Standings:
             done, at = r["finish"] or (None, None)
             rows.append(dict(id=i, share=share, metres=share * self.length if self.length else None,
                              who="me" if i == self.me else self.who.get(i), t=t, finish=done, finish_place=at))
-        rows.sort(key=lambda r: -r["share"])
+        fixed = [r["finish_place"] if r["finish"] is not None else None for r in rows]
+        rest = sorted((k for k, p in enumerate(fixed) if p is None), key=lambda k: -rows[k]["share"])
+        for r, place in zip(rows, fill_places(fixed, rest)):
+            r["place"] = place
+        rows.sort(key=lambda r: r["place"])
+        now = max((r["t"] for r in rows), default=0.0)
         for k, r in enumerate(rows):
-            r["place"] = k + 1
+            r["interval"] = self.interval(r, rows[k - 1], now) if k else None
         return dict(length=self.length, racers=rows)
+
+    STILL = 1.0  # s without its share sent after which a racer is taken to be standing where it was
+
+    def interval(self, r, ahead, now):
+        """How many seconds after the racer ahead (snapshot rows) racer r got to where it is: the time between the
+        two passing the same point, the one ahead's from its history (KEEP), at local time now. Both finished: the
+        gap between their times at the finish. None when not known (the one ahead passed it before its history)."""
+        if r["finish"] is not None:
+            return r["finish"] - ahead["finish"] if ahead["finish"] is not None else None
+        h = np.array(self.racers[ahead["id"]]["hist"]).reshape(-1, 2)
+        shares = np.maximum.accumulate(h[:, 1])  # along the track it only goes on
+        if not len(h) or not shares[0] <= r["share"] <= shares[-1]:
+            return None
+        # when r's share was sent; while it isn't, r stands still (or the list is late: under STILL)
+        t = r["t"] if now - r["t"] < self.STILL else now
+        return max(0.0, t - float(np.interp(r["share"], shares, h[:, 0])))
