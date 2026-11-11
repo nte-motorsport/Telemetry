@@ -62,6 +62,21 @@ def record_name(n, nbits, end):
     return None
 
 
+def _shifted(marker):
+    """The bytes marker leaves in a packet whichever bit it starts at: for each of the 8, the bytes it fills whole."""
+    v = int.from_bytes(marker, "little")
+    return [marker] + [(v << k).to_bytes(len(marker) + 1, "little")[1:len(marker)] for k in range(1, 8)]
+
+
+MARKS = _shifted(RANK_MARK) + _shifted(LOBBY)
+
+
+def named(payload):
+    """True if the packet may hold a rank or a lobby record: a quick look for their markers at any bit, so that
+    decode (slow) is run on few packets of all those captured."""
+    return any(m in payload for m in MARKS)
+
+
 def decode(payload):
     """([(rank, points)] in the order the packet names them, [dict(id, name, points, car)] of the lobby records in
     it) of one server packet."""

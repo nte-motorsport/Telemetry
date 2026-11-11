@@ -1,5 +1,6 @@
 """Small building blocks in the NTE Motorsport site style: panels, buttons, tiles, chart cards, the backdrop."""
 import html
+import itertools
 import math
 
 from PySide6.QtCore import QPoint, QSize, Qt
@@ -202,97 +203,160 @@ class RowList(QListWidget):
                 x.style().polish(x)
 
 
-class RacersPanel(QFrame):
-    """A race's entrants side by side: each one's name, car and whether it is the player or a bot, the colour of
-    their car on the map and the charts once the capture has matched them (capture/identity.py), and during a race
-    their place, how far ahead or behind they are and how much is left (capture/progress.py), in race order."""
+class TimingPanel(QFrame):
+    """A race's entrants in a list, in race order during a race: each one's place, name (in the colour of their car on
+    the map and the charts, once the capture has matched them: capture/identity.py) and how many seconds after the
+    racer ahead they got where they are (capture/progress.py)."""
+    WIDTH = 300
+    PLACEHOLDERS = 4  # rows in all at least: dashes for those not known yet (the race server names them as the race loads)
 
-    def __init__(self, title="Racers"):
+    def __init__(self, title="Timing"):
         super().__init__()
         self.setProperty("role", "panel")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)  # as tall as it needs, the charts the rest
+        self.setFixedWidth(self.WIDTH)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)  # as tall as it needs
         v = QVBoxLayout(self)
         v.setContentsMargins(theme.GAP, theme.GAP, theme.GAP, theme.GAP)
         v.setSpacing(theme.GAP)
         v.addWidget(label(title, "sectionTitle"))
-        self.row = QHBoxLayout()
-        self.row.setSpacing(theme.GAP)
-        v.addLayout(self.row)
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(theme.GAP)
+        self.grid.setVerticalSpacing(4)
+        self.grid.setColumnStretch(1, 1)
+        v.addLayout(self.grid)
+        self.rows = []  # (place, name, interval) labels, one row per entrant
         self.me = ""
         self.entrants = []
         self.colors = {}  # name -> colour of their car on the map and the charts
-        self.standings = {}  # name ("" for the player) -> (place, the place and gap, the share done and what's left)
-        self.boxes = {}  # name -> (its box, label of the place and gap, label of the rest), to set them in place
+        self.standings = {}  # name ("" for the player) -> (place, interval in s or None, finished)
 
     def set_colors(self, colors):
         if colors != self.colors:
             self.colors = dict(colors)
-            self.set_entrants(self.entrants)
+            self.refresh()
 
     def set_me(self, name):
         self.me = name or ""
-        self.set_entrants(self.entrants)
+        self.refresh()
 
     def set_standings(self, standings):
-        """{name, or "" for the player: (place, the place and gap, the share done and what's left)}; {} for none.
-        Written into the boxes as they are; they are put in race order when that changes."""
-        order = lambda st: sorted(st, key=lambda n: st[n][0])
-        reorder = order(standings) != order(self.standings)
+        """{name, or "" for the player: (place, seconds after the racer ahead or None, whether finished)}; {} for
+        none. The interval of two finishers is the race server's, to the millisecond; one on the way is good to a
+        tenth or two, so written to the tenth."""
         self.standings = dict(standings)
-        if reorder:
-            self.set_entrants(self.entrants)
-            return
-        for name, (_, head, rest) in self.boxes.items():
-            st = self.standing(name)
-            head.setText(st[1] if st else "")
-            rest.setText(st[2] if st else "")
-            head.setVisible(bool(st))
-            rest.setVisible(bool(st))
+        self.refresh()
 
     def standing(self, name):
         return self.standings.get("" if self.me and name == self.me else name)
 
     def set_entrants(self, entrants):
         """entrants: [dict(car, name, bot)] (capture/roster.py)"""
-        from ui.vehicles import car_name
         self.entrants = list(entrants)
-        self.boxes = {}
-        while self.row.count():
-            w = self.row.takeAt(0).widget()
+        while len(self.rows) < max(len(self.entrants), self.PLACEHOLDERS):
+            row = len(self.rows)
+            cells = (label("", "muted"), label(), label("", "muted"))
+            cells[1].setTextFormat(Qt.RichText)
+            cells[2].setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            for col, w in enumerate(cells):
+                self.grid.addWidget(w, row, col)
+            self.rows.append(cells)
+        self.refresh()
+
+    def order(self):
+        """The entrants in race order while there is one (those not placed after, as they were)."""
+        return sorted(self.entrants, key=lambda e: self.standing(e["name"])[0] if self.standing(e["name"]) else 99)
+
+    def refresh(self):
+        """The rows written anew, in race order; rows of dashes after them up to PLACEHOLDERS, at the places left."""
+        placed = self.order()
+        taken = {st[0] for st in map(self.standing, (e["name"] for e in placed)) if st}
+        free = (p for p in itertools.count(1) if p not in taken)
+        dashes = [next(free) for _ in range(self.PLACEHOLDERS - len(placed))]
+        # by place, those without one (not placed yet) last; before the race, the entrants first and the dashes after
+        place_of = lambda item: item if isinstance(item, int) else (self.standing(item["name"]) or (99,))[0]
+        placed = sorted(placed + dashes, key=place_of) if taken else placed + dashes
+        for k, cells in enumerate(self.rows):
+            shown = k < len(placed)
+            for w in cells:
+                w.setVisible(shown)
+            if not shown:
+                continue
+            if isinstance(placed[k], int):
+                place = placed[k]
+                # before the race, among entrants not placed yet, a dash's place is no more known than theirs
+                known = taken or not self.entrants
+                cells[0].setText(f"P{place}" if known else "—")
+                cells[1].setText(f'<span style="color:{theme.MUTED}">—</span>')
+                cells[2].setText("Interval" if known and place == 1 else "—")
+                continue
+            e = placed[k]
+            st = self.standing(e["name"])
+            mine = self.me and e["name"] == self.me
+            color = theme.ACCENT if mine else self.colors.get(e["name"])
+            dot = f'<span style="color:{color}">&#9679;</span>&nbsp;' if color else ""
+            cells[0].setText(f"P{st[0]}" if st else "—")
+            cells[1].setText(dot + html.escape(shown_name(e["name"], e.get("bot"))))
+            cells[2].setText("" if not st else "Interval" if st[0] == 1
+                             else f"+{st[1]:.{3 if st[2] else 1}f}" if st[1] is not None else "")
+
+
+class DriversPanel(QFrame):
+    """A race's entrants in detail, in the order they are given: each one's name (in the colour of their car on the
+    map and the charts), car, and rank with points: the player's own as the server names it, another player's from
+    their points in the race's lobby (ui/ranks.py), a bot's none."""
+    PLACEHOLDERS = 4  # entries in all at least: dashes for those not known yet
+
+    def __init__(self, title="Racers"):
+        super().__init__()
+        self.setProperty("role", "panel")
+        self.setFixedWidth(TimingPanel.WIDTH)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(theme.GAP, theme.GAP, theme.GAP, theme.GAP)
+        v.setSpacing(theme.GAP)
+        v.addWidget(label(title, "sectionTitle"))
+        self.list = QVBoxLayout()
+        self.list.setSpacing(theme.GAP)
+        v.addLayout(self.list)
+        self.shown = None  # what the entries say, to write them anew only when it changes
+        self.set_racers([])
+
+    def set_racers(self, racers):
+        """racers: [dict(name, bot, color or None, car: its name, rank: a rank row or None, points or None)], in
+        order; [] for placeholders."""
+        from ui import ranks
+        if racers == self.shown:
+            return
+        self.shown = racers
+        while self.list.count():
+            w = self.list.takeAt(0).widget()
             if w:  # gone at once: deleteLater alone leaves it drawn where it was until the event loop runs
                 w.hide()
                 w.setParent(None)
                 w.deleteLater()
-        if not self.entrants:
-            self.row.addWidget(label("Not known yet: the race server names its entrants as the race loads.",
-                                     "muted"))
-        # in race order while there is one (those not placed after, as they were)
-        placed = sorted(self.entrants, key=lambda e: self.standing(e["name"])[0] if self.standing(e["name"]) else 99)
-        for e in placed:
+        for r in racers + [None] * (self.PLACEHOLDERS - len(racers)):  # dashes for those not known yet
             box = QFrame()
-            box.setProperty("role", "panel")
             b = QVBoxLayout(box)
-            b.setContentsMargins(theme.GAP, theme.GAP // 2, theme.GAP, theme.GAP // 2)
+            b.setContentsMargins(0, 0, 0, 0)
             b.setSpacing(2)
-            tags = []
-            if self.me and e["name"] == self.me:
-                tags.append(f'<span style="color:{theme.ACCENT}">YOU</span>')
-            color = theme.ACCENT if self.me and e["name"] == self.me else self.colors.get(e["name"])
-            dot = f'<span style="color:{color}">&#9679;</span>&nbsp;' if color else ""
-            head = label(dot + html.escape(shown_name(e["name"], e.get("bot")))
-                         + ("&nbsp;&nbsp;" + " ".join(tags) if tags else ""),
-                         "listTitle")
-            head.setTextFormat(Qt.RichText)
-            b.addWidget(head)
-            b.addWidget(label(car_name(e["car"]), "muted"))
-            st = self.standing(e["name"])
-            head, rest = label(st[1] if st else ""), label(st[2] if st else "", "muted")
-            for w in (head, rest):
-                w.setVisible(bool(st))
+            if r is None:
+                head, car, rank = "—", "—", "—"
+            else:
+                dot = f'<span style="color:{r["color"]}">&#9679;</span>&nbsp;' if r["color"] else ""
+                head = dot + html.escape(shown_name(r["name"], r["bot"]))
+                car = html.escape(r["car"]) if r["car"] else "—"
+                if r["bot"]:
+                    rank = "Bot"
+                elif r["rank"]:
+                    rank = (f'<span style="color:{ranks.color(r["rank"])}">{html.escape(ranks.name(r["rank"]))}</span>'
+                            + (f" · {r['points']} pts" if r["points"] is not None else ""))
+                else:
+                    rank = "—"
+            for text, role in ((head, "listTitle"), (car, "muted"), (rank, "muted")):
+                w = label(text, role)
+                w.setTextFormat(Qt.RichText)
                 b.addWidget(w)
-            self.boxes[e["name"]] = (box, head, rest)
-            self.row.addWidget(box)
-        self.row.addStretch()
+            self.list.addWidget(box)
 
 
 def shown_name(name, bot):

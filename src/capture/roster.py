@@ -76,13 +76,14 @@ def decode_role(n, nbits, bit):
 
 
 def decode(payload):
-    """([(slot, car id, name)], {bot's "AIRacer_..." name: its name}, the player's own (account id, name) or None,
-    the race's track (TRACK) or None) for the records in one server packet."""
+    """([(slot, car id, name)], [(bot's "AIRacer_..." name, its name)], the player's own (account id, name) or None,
+    the race's track (TRACK) or None) for the records in one server packet. Two bots may have one "AIRacer_..."
+    name: two bots in Vehicle018 were both "AIRacer_Vehicle018" (2026-11-11)."""
     if b"ehicle" not in payload and len(payload) < 64:
-        return [], {}, None, None
+        return [], [], None, None
     n = int.from_bytes(payload, "little")
     nbits = len(payload) * 8
-    entrants, bots, role, track = [], {}, None, None
+    entrants, bots, role, track = [], [], None, None
     for k in range(8):  # the strings are at any bit: look at the packet shifted by each
         data = (n >> k).to_bytes(len(payload), "little") if k else payload
         i = data.find(ROLE)
@@ -113,7 +114,8 @@ def decode(payload):
                         break  # the next bot's record: this one was cut short ("Robot0108" was the next's)
                     if s and (robot or ROBOT.fullmatch(s)):
                         if robot and not NOT_NAME.match(s):
-                            bots[text] = s
+                            if (text, s) not in bots:
+                                bots.append((text, s))
                             break
                         robot = True
                         bit += 32 + (8 if s.isascii() else 16) * (len(s) + 1)
@@ -139,7 +141,7 @@ class Roster:
         # name -> (slot, how many came before): the slot of an entrant's first record. The slots are given in the
         # order the entrants joined, and that is the order the server makes their cars in (capture/identity.py)
         self.first = {}
-        self.bots = {}      # bot's "AIRacer_..." name -> its name
+        self.bots = {}      # bot's name -> the "AIRacer_..." names its records gave it
         self.role = None    # the player's own (account id, name), once the server has sent it
         self.track = ""     # the race's track (a row of DT_RaceTrack), once the server has named it
 
@@ -158,9 +160,9 @@ class Roster:
             if self.entrants.get(name) != car:
                 self.entrants[name] = car
                 changed = True
-        for tag, name in bots.items():
-            if self.bots.get(tag) != name:
-                self.bots[tag] = name
+        for tag, name in bots:
+            if tag not in self.bots.get(name, ()):
+                self.bots[name] = self.bots.get(name, set()) | {tag}
                 changed = True
         return changed
 
@@ -170,5 +172,5 @@ class Roster:
 
     def field(self):
         """[dict(car, name, bot)] in the order they joined."""
-        bots = set(self.bots.values())
+        bots = set(self.bots)
         return [dict(car=self.entrants[name], name=name, bot=name in bots) for name in self.order()]
