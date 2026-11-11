@@ -1,4 +1,5 @@
 """The Live page: telemetry tiles and the last minute on charts."""
+import html
 import time
 
 import numpy as np
@@ -137,8 +138,8 @@ class LivePage(QWidget):
         v.addWidget(self.grid, 1)
 
     def build_statusbar(self):
-        """The bar along the bottom of the window: whether data is coming in and how fast, whether a race is
-        being recorded."""
+        """The bar along the bottom of the window: whether data is coming in, and whether a race is being recorded,
+        in one line of text."""
         bar = QFrame()
         bar.setObjectName("statusBar")
         bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
@@ -149,19 +150,14 @@ class LivePage(QWidget):
         self.dot.setFixedSize(10, 10)
         h.addWidget(self.dot)
         self.status = label("", "muted")
+        self.status.setTextFormat(Qt.RichText)
         h.addWidget(self.status, 1)
+        self.recording = False  # an online race is being recorded (it will be on the Replays page once it ends)
         self.admin_btn = Button("Relaunch as administrator", "shield-lock")
         self.admin_btn.set_flag("primary", True)
         self.admin_btn.clicked.connect(lambda: windows.relaunch_as_admin() and QApplication.quit())
         self.admin_btn.hide()
         h.addWidget(self.admin_btn)
-        self.rec = label(f'<span style="color:{theme.DANGER}">●</span> Recording race', "muted")
-        self.rec.setTextFormat(Qt.RichText)
-        self.rec.setToolTip("An online race is being recorded; it will be on the Replays page once it ends")
-        self.rec.hide()
-        h.addWidget(self.rec)
-        self.rate = label("", "muted")
-        h.addWidget(self.rate)
         return bar
 
     # ----- capture -----
@@ -275,7 +271,8 @@ class LivePage(QWidget):
         self.dirty = True
 
     def set_recording(self, on):
-        self.rec.setVisible(on)
+        self.recording = on
+        self.tick()
 
     def set_charts(self, keys):
         self.grid.set_order(keys)
@@ -303,10 +300,10 @@ class LivePage(QWidget):
             text = self.error
         else:
             text = f"No data: not in a car or no game traffic ({self.source_desc})"
+        text = html.escape(text)
+        if self.recording:
+            text += f'&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:{theme.DANGER}">●</span> Recording race'
         self.status.setText(text)
-        now = time.monotonic()
-        n = len(self.live) - self.live.since(now, 1) if ok and self.in_car else 0
-        self.rate.setText(f"{n} samples/s" if ok and self.in_car else "")
         self.dirty = True  # the charts' time axis moves even without new data
 
     # ----- rendering -----
