@@ -131,9 +131,12 @@ class MultiplayerPage(QWidget):
             bot = bool(e.get("bot"))
             points = None if bot else self.lobby.get(e["name"])
             if me and self.own_rank:
-                rank, points = self.own_rank
+                row, points = self.own_rank
+                rank = ranks.from_row(row)
             else:
                 rank = ranks.from_points(points) if points is not None else None
+            if rank:
+                rank = dict(name=rank["name"], logo=ranks.logo(rank))
             car = car_name(e["car"]) if e.get("car") else ""
             if e["name"] in self.plates:
                 car = f"{car} ({self.plates[e['name']]})" if car else f"({self.plates[e['name']]})"

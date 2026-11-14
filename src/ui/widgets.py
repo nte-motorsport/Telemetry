@@ -302,9 +302,10 @@ class TimingPanel(QFrame):
 
 class DriversPanel(QFrame):
     """A race's entrants in detail, in the order they are given: each one's name (in the colour of their car on the
-    map and the charts), car, and rank with points: the player's own as the server names it, another player's from
-    their points in the race's lobby (ui/ranks.py), a bot's none."""
+    map and the charts), car, and rank with points, the rank's logo on the left: the player's own as the server names
+    it, another player's from their points in the race's lobby (ui/ranks.py), a bot's none."""
     PLACEHOLDERS = 4  # entries in all at least: dashes for those not known yet
+    LOGO = 44  # px: a rank logo's side, about the three lines of an entry
 
     def __init__(self, title="Racers"):
         super().__init__()
@@ -319,12 +320,12 @@ class DriversPanel(QFrame):
         self.list.setSpacing(theme.GAP)
         v.addLayout(self.list)
         self.shown = None  # what the entries say, to write them anew only when it changes
+        self.logos = {}  # logo file -> its pixmap, scaled
         self.set_racers([])
 
     def set_racers(self, racers):
-        """racers: [dict(name, bot, color or None, car: its name, rank: a rank row or None, points or None)], in
-        order; [] for placeholders."""
-        from ui import ranks
+        """racers: [dict(name, bot, color or None, car: its name, rank: dict(name, logo: its file or None) or None,
+        points or None)], in order; [] for placeholders."""
         if racers == self.shown:
             return
         self.shown = racers
@@ -336,9 +337,20 @@ class DriversPanel(QFrame):
                 w.deleteLater()
         for r in racers + [None] * (self.PLACEHOLDERS - len(racers)):  # dashes for those not known yet
             box = QFrame()
-            b = QVBoxLayout(box)
+            row = QHBoxLayout(box)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(theme.GAP)
+            icon = QLabel()  # empty for a bot or a rank not known: the names stay in line
+            icon.setFixedSize(self.LOGO, self.LOGO)
+            icon.setAlignment(Qt.AlignCenter)
+            pix = self.logo(r["rank"]["logo"]) if r and r["rank"] and r["rank"]["logo"] else None
+            if pix:
+                icon.setPixmap(pix)
+            row.addWidget(icon)
+            b = QVBoxLayout()
             b.setContentsMargins(0, 0, 0, 0)
             b.setSpacing(2)
+            row.addLayout(b, 1)
             if r is None:
                 head, car, rank = "—", "—", "—"
             else:
@@ -347,16 +359,25 @@ class DriversPanel(QFrame):
                 car = html.escape(r["car"]) if r["car"] else "—"
                 if r["bot"]:
                     rank = "Bot"
-                elif r["rank"]:
-                    rank = (f'<span style="color:{ranks.color(r["rank"])}">{html.escape(ranks.name(r["rank"]))}</span>'
-                            + (f" · {r['points']} pts" if r["points"] is not None else ""))
                 else:
-                    rank = "—"
+                    rank = " · ".join(([html.escape(r["rank"]["name"])] if r["rank"] else [])
+                                      + ([f"{r['points']} pts"] if r["points"] is not None else [])) or "—"
             for text, role in ((head, "listTitle"), (car, "muted"), (rank, "muted")):
                 w = label(text, role)
                 w.setTextFormat(Qt.RichText)
                 b.addWidget(w)
             self.list.addWidget(box)
+
+    def logo(self, path):
+        """The pixmap of a logo file, scaled to fit, or None if it won't load."""
+        if path not in self.logos:
+            pix = QPixmap(path)
+            if not pix.isNull():
+                ratio = self.devicePixelRatioF()
+                pix = pix.scaled(QSize(self.LOGO, self.LOGO) * ratio, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pix.setDevicePixelRatio(ratio)
+            self.logos[path] = None if pix.isNull() else pix
+        return self.logos[path]
 
 
 def shown_name(name, bot):

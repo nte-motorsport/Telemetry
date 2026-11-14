@@ -15,6 +15,11 @@ URL = "https://raw.githubusercontent.com/nte-motorsport/Database/main/data/{}.js
 TIMEOUT = 15  # s for each file
 
 
+def plain(value):
+    """A name as kept: text, or a dict of what an entry says (ui/ranks.py)."""
+    return value if isinstance(value, dict) else str(value)
+
+
 def key(game_id):
     """A game id as looked up: the game writes some in more ways than one ("Vehicle026", "vehicle_026")."""
     return str(game_id).lower().replace("_", "")
@@ -30,12 +35,12 @@ class Names(QObject):
         self.files = files
         self.entry = entry
         self.path = path or os.path.join(data_dir(), cache)
-        self.names = {}  # key(game id) -> name
+        self.names = {}  # key(game id) -> name (or a dict: plain)
         try:
             with open(self.path, encoding="utf-8") as f:
                 cached = json.load(f)
             if isinstance(cached, dict):
-                self.names = {str(k): str(v) for k, v in cached.items()}
+                self.names = {str(k): plain(v) for k, v in cached.items()}
         except (OSError, ValueError):
             pass
         self.fetching = False
@@ -59,7 +64,7 @@ class Names(QObject):
                 with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
                     for e in json.load(r):
                         if isinstance(e, dict):
-                            names.update((key(g), str(n)) for g, n in self.entry(e))
+                            names.update((key(g), plain(n)) for g, n in self.entry(e))
         except (OSError, ValueError):
             return  # offline, or the database is broken for now: the cached names stay
         finally:

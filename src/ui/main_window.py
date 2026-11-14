@@ -11,6 +11,7 @@ from ui.multiplayer_page import MultiplayerPage
 from ui.prefs import Prefs
 from ui.replays_page import ReplaysPage
 from ui.settings_page import SettingsPage
+from ui.ranks import ranks
 from ui.tracks import tracks
 from ui.vehicles import vehicles
 from ui.widgets import Backdrop, Button
@@ -83,6 +84,8 @@ class MainWindow(QMainWindow):
         vehicles().refresh()
         tracks().changed.connect(lambda: self.replays.refresh())  # track names, the same way (ui/tracks.py)
         tracks().refresh()
+        ranks().changed.connect(self.multiplayer.show_drivers)  # rank names and logos, the same way (ui/ranks.py)
+        ranks().refresh()
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
             self.pages.addWidget(p)
