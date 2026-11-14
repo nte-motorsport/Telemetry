@@ -7,6 +7,8 @@ A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            were known: replays from 2026-11-04 on),
            "bots": ["2", ...] (the rivals the game drives, from 2026-11-05 on; left out when there were none),
            "names": {"2": "...", ...} (the rivals' names, those the capture could match: from 2026-11-06 on),
+           "plates": {"<entrant's name>": "NTEMTSP", ...} (the number plates of the players' cars, those the capture
+           could match, the player's own among them; bots' cars have none; from 2026-11-13 on),
            "track": "Track003_02_pvp" (the track, a row of the game's DT_RaceTrack table, when it was known: from
            2026-11-07 on; ui/tracks.py names it),
            "player": {"name": "...", "id": "214278201357"} (who drove "me": the account the race was driven on,

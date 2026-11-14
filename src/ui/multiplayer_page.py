@@ -54,6 +54,7 @@ class MultiplayerPage(QWidget):
         self.drivers = DriversPanel()
         self.lobby = {}  # name -> rank points before the race, of the players the race was matched with
         self.own_rank = None  # the player's own (rank row, points), as the server names them
+        self.plates = {}  # entrant's name -> their car's number plate
         left = QVBoxLayout()
         left.setSpacing(theme.GAP)
         left.addWidget(self.racers)
@@ -106,6 +107,11 @@ class MultiplayerPage(QWidget):
         self.racers.set_me(name)
         self.show_standings()
 
+    def set_plates(self, plates):
+        """{entrant's name: number plate}, from the capture."""
+        self.plates = dict(plates)
+        self.show_drivers()
+
     def set_lobby(self, lobby):
         """The players the latest race was matched with, from the capture (capture/ranking.py)."""
         self.lobby = {e["name"]: e["points"] for e in lobby}
@@ -128,7 +134,10 @@ class MultiplayerPage(QWidget):
                 rank, points = self.own_rank
             else:
                 rank = ranks.from_points(points) if points is not None else None
-            out.append(dict(name=e["name"], bot=bot, car=car_name(e["car"]) if e.get("car") else "",
+            car = car_name(e["car"]) if e.get("car") else ""
+            if e["name"] in self.plates:
+                car = f"{car} ({self.plates[e['name']]})" if car else f"({self.plates[e['name']]})"
+            out.append(dict(name=e["name"], bot=bot, car=car,
                             color=theme.ACCENT if me else self.racers.colors.get(e["name"]), rank=rank, points=points))
         self.drivers.set_racers(out)
 

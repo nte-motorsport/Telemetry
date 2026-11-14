@@ -27,9 +27,10 @@ row. In 16 races of 2026-11-07/09 every finish time was the one the full results
 element's place the racer's place at the finish (the times rise with it), the finisher's share 1 or nearly (0.9989).
 The time may also come on its own, 34 and then another struct's fields: the player's own, 2026-11-11, 11 s after
 they crossed the line, their element's share stuck at 0.9937 since (only its metres sent, past the track's length).
-A lone time is taken only for an element 95% done and not finished, and only when it goes with the race's clock:
-a time at the finish arrives so many seconds after the race got under way, give or take a couple (finishers of
-2026-11-11 arrived 2.5 s before to 0 s after it, the list's leader passing 1% being when the race got under way).
+Its field number need not be its element's: P2's time came as element 4's 34 (2026-11-13), the player's own P2 as
+element 2's (2026-11-11). So a lone time goes to the racer who crosses the line next, the one furthest along of
+those not finished (95% done at least), when it is later than every time at the finish yet, at the place after
+theirs; and only when that racer reached the line when its time says (see Standings.lone).
 
 The list says nothing of who is who. Standings follows each racer from one update to the next (they don't jump),
 tells the player by their own distance driven, and each rival by where its car was: on the player's own drive, the
@@ -85,16 +86,19 @@ def fill_places(fixed, rest):
     return out
 
 
-def lone_finishes(payload, places):
-    """[(place, finish time in s)] of field 34 of the elements at places (a finish time sent without the rest of
-    its element; see finish_time for one sent with it) in one server packet. Chance matches are many: the caller
-    takes only one that goes with the race's clock."""
+FINISH_FIELDS = tuple(34 + 52 * i for i in range(RACERS))
+
+
+def lone_finishes(payload):
+    """[finish time in s] of any element's field 34 (a finish time sent without the rest of its element; see
+    finish_time for one sent with it) in one server packet. Chance matches are many: the caller takes only one that
+    goes with the race's clock."""
     n = int.from_bytes(payload, "little")
     out = []
-    for a in bits.find(payload, tuple(34 + 52 * (p - 1) for p in places), 8, 0, len(payload) * 8 - 40):
+    for a in bits.find(payload, FINISH_FIELDS, 8, 0, len(payload) * 8 - 40):
         t = _f32(n, a + 8)
         if math.isfinite(t) and 10 < t < 3600:
-            out.append(((((n >> a) & 0xFF) - 34) // 52 + 1, t))
+            out.append(t)
     return out
 
 
@@ -134,7 +138,6 @@ class Standings:
     OWN_DRIVEN = 150.0  # m driven over OWN_SPAN before that is looked at: standing on the grid, everyone fits
     OWN_TIMES = 3     # looks in a row that find another racer to be the player before it is taken to be
     LOOK = 1.0        # s between looks at who is who
-    CLOCK = (-6.0, 3.0)  # s: a lone finish time arrives this long after the race got under way plus the time, at most
     SAMPLES = 60      # positions of each car looked at, at most (one a second over the last minute)
     NEAR = 25.0       # m: a racer whose entry puts it within this of where a car was (median) may be that car
     VOTES = 3         # positions of a car that must be on the player's drive before it is told
@@ -227,22 +230,55 @@ class Standings:
             self.find_rivals()
 
     def awaiting(self):
-        """The places of the list's elements whose racer is near the end and hasn't finished: a finish time may come
-        for them on its own (lone_finishes)."""
-        if self.under_way is None:
-            return []
-        return [r["at"] for r in self.racers
-                if r.get("at") and not r["finish"] and r["hist"] and r["hist"][-1][1] >= FINISHED]
+        """True while a racer is near the end and hasn't finished: a finish time may come for it on its own
+        (lone_finishes)."""
+        return self.under_way is not None and self.next_over() is not None
+
+    def next_over(self):
+        """The racer to cross the line next: the furthest along of those not finished, 95% done at least; or None."""
+        near = [r for r in self.racers if not r["finish"] and r["hist"] and r["hist"][-1][1] >= FINISHED]
+        return max(near, key=lambda r: r["hist"][-1][1], default=None)
+
+    LINE = 0.9995  # share of the race done at the line (1, give or take a float's rounding)
+    CROSS_SPREAD = 1.5  # s: a racer reaches the line in the list this close to its time at the finish plus the race's
+                        # start (34.95-36.37 s in a race of 2026-11-13; 61.45-63.11 s in one of 2026-11-11)
+
+    def crossed(self, r):
+        """Local time racer r reached the line in the list, or None."""
+        return next((t for t, share in r["hist"] if share >= self.LINE), None)
 
     def lone(self, t, finishes):
-        """Finish times sent on their own (lone_finishes) at local time t: each taken for its element's racer when
-        it goes with the race's clock. True if any was."""
+        """Finish times sent on their own (lone_finishes) at local time t, each taken for the racer to cross the
+        line next, at the place after those finished, when it is later than every time at the finish yet and goes
+        with when that racer reached the line. Many numbers in a packet pass for one by chance, some even within
+        a few seconds of the race's clock (8 in 20 races of 2026-11-11/13), so the race's start is measured on
+        the racers finished with their element (when they reached the line minus their time), and a lone time is
+        taken only when that racer reaches the line, as near as the list says, at its time plus that start: by
+        the pace of its last updates, or while its share has stopped coming (the player's own, 37 m short of the
+        line, 2026-11-11), between its last update and now. True if any was."""
+        starts = sorted(c - r["finish"][0] for r in self.racers if r["finish"] and (c := self.crossed(r)) is not None)
+        if not starts:
+            return False  # nothing to measure the start on: the first finisher's always comes with its element
+        start = starts[len(starts) // 2]
         took = False
-        for place, done in finishes:
-            r = next((r for r in self.racers if r.get("at") == place and not r["finish"] and r["hist"]
-                      and r["hist"][-1][1] >= FINISHED), None)
-            if r and self.under_way is not None and self.CLOCK[0] <= t - done - self.under_way <= self.CLOCK[1]:
-                r["finish"] = (done, place)
+        for done in sorted(finishes):
+            r = self.next_over()
+            times = [o["finish"][0] for o in self.racers if o["finish"]]
+            if r is None or done <= max(times):
+                continue  # one already taken (sent with its element too), or out of order
+            at = done + start  # when the racer would have reached the line
+            last_t, share = r["hist"][-1]
+            if t - last_t < self.STILL:  # still coming: where its pace takes it to the line
+                h = [(ht, hs) for ht, hs in r["hist"] if ht >= last_t - 2.0]
+                rate = (share - h[0][1]) / (last_t - h[0][0]) if last_t > h[0][0] else 0.0
+                if rate <= 0:
+                    continue
+                cross = last_t + (1.0 - share) / rate
+                ok = abs(cross - at) <= self.CROSS_SPREAD and t >= cross - 0.5
+            else:  # stopped coming: somewhere between its last update and now
+                ok = last_t - self.CROSS_SPREAD <= at <= t + self.CROSS_SPREAD
+            if ok:
+                r["finish"] = (done, len(times) + 1)
                 took = True
         return took
 
