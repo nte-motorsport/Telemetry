@@ -60,6 +60,7 @@ class LiveSource(QThread):
     field = Signal(object)      # the race's entrants, see roster.Roster.field: [] while there are none
     track = Signal(str)         # the race's track as its server names it (roster.TRACK), "" while not known
     names = Signal(object)      # {rival number: entrant's name} of the rivals known by name (capture/identity.py)
+    plates = Signal(object)     # {entrant's name: their car's number plate}, of those known (capture/identity.py)
     player = Signal(str, str)   # the player's own name and account id (as text: it doesn't fit a C int), see
                                 # roster.ROLE: as soon as a server sends them
     standings = Signal(object)  # how far along the track everyone is, see progress.Standings.snapshot; None when
@@ -98,6 +99,7 @@ class LiveSource(QThread):
         self.entrants = []  # as last emitted
         self.race_track = ""  # as last emitted
         self.named = {}     # as last emitted
+        self.plated = {}    # as last emitted
         self.me = ""        # the player's name, see Identity.match: from the game (player), else as set
         self.role = None    # the player's own (account id, name), as last emitted
         self.ranking = Ranking()  # the player's standing and the latest lobby, from any of the game's servers
@@ -166,8 +168,7 @@ class LiveSource(QThread):
         places = progress.decode(payload)
         if places:
             self.progress.update(t, places)
-        waiting = self.progress.awaiting()
-        lone = waiting and self.progress.lone(t, progress.lone_finishes(payload, waiting))
+        lone = self.progress.awaiting() and self.progress.lone(t, progress.lone_finishes(payload))
         if places or lone:
             # a finish at once: it may be the last the race server sends before the teleport away
             if t - self.standings_at >= self.STANDINGS_EVERY or lone or any(p[3] is not None for p in places):
@@ -223,7 +224,7 @@ class LiveSource(QThread):
                 if len(self.identities) >= self.PROBES:
                     self.identities.clear()
                 ident = self.identities[(sport, dport)] = Identity()
-            ident.feed(payload)
+            ident.feed(payload, now)
         elif ranking.named(payload):
             # a server whose world wasn't named on this flow: the capture began after the game connected to it
             # (2026-11-11: two lobbies of the world the player waited in were missed so)
@@ -252,10 +253,32 @@ class LiveSource(QThread):
         # cars the game drives are a race's bots when the server named a field to race; in free roam (a world
         # shared with friends) they are its people and traffic, 20-30 of them, which aren't rivals
         self.opponents.allow_ai = len(entrants) >= 2
-        named = self.match_names(r, self.identities.get((self.flow[1], self.flow[0])) if self.flow else None)
+        ident = self.identities.get((self.flow[1], self.flow[0])) if self.flow else None
+        named = self.match_names(r, ident)
         if named != self.named:
             self.named = named
             self.names.emit(named)
+        plates = self.match_plates(named, ident)
+        if plates != self.plated:
+            self.plated = plates
+            self.plates.emit(plates)
+
+    def match_plates(self, named, ident):
+        """{entrant's name: number plate} of the rivals known by name and the player, whose cars' plates are known:
+        the player's own from their garage, by the model they race in, else from their car."""
+        if not ident or not (ident.plates or ident.garage):
+            return {}
+        opp = self.opponents
+        by_num = {num: cid for cid, num in opp.nums.items()}
+        out = {name: ident.plates[by_num[num]] for num, name in named.items()
+               if num in by_num and by_num[num] in ident.plates}
+        own = next(iter(opp.own_ids)) if len(opp.own_ids) == 1 else None
+        model = next((e["car"][-3:] for e in self.entrants if e["name"] == self.me), None)
+        if self.me and model in ident.garage:
+            out[self.me] = ident.garage[model]
+        elif self.me and own in ident.plates:
+            out[self.me] = ident.plates[own]
+        return out
 
     def match_names(self, roster, ident):
         """{rival number: name} for the rivals the field can be matched to."""

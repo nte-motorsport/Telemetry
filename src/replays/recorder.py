@@ -34,6 +34,7 @@ class RaceRecorder(QObject):
         self.player = ("", "")
         self.rank_now = None  # the player's (rank, points) as last named (capture/ranking.py)
         self.lobby_now = []  # the latest lobby's players as last known: they come some 10 s before the race server
+        self.plates_now = {}  # {entrant's name: number plate} as last known: the cars are made before the race
 
     def set_enabled(self, on):
         self.enabled = on
@@ -76,6 +77,12 @@ class RaceRecorder(QObject):
         self.player = (name or "", account or "")
         if self.active and name:
             self.racer = self.player  # the race server names the player as it connects: the latest is this race's
+
+    def set_plates(self, plates):
+        if plates:
+            self.plates_now = dict(plates)
+        if self.active:
+            self.plates.update(plates)  # one once known stays: the capture forgets them at the finish
 
     def set_names(self, names):
         if self.active:
@@ -125,6 +132,7 @@ class RaceRecorder(QObject):
         self.me, self.rivals, self.last_t = [], {}, {}
         self.bots = {}  # rival number -> tally of its updates with the AI flag (+1) and without (-1)
         self.names = {}  # rival number -> entrant's name, as the capture matched them
+        self.plates = dict(self.plates_now)  # entrant's name -> number plate
         self.racers = {}  # racer id (capture/progress.py) -> dict(who, rows=[[t, share of the race done], ...])
         self.length = None  # the track's length, m, as the capture measured it
         self.racer = self.player
@@ -190,6 +198,11 @@ class RaceRecorder(QObject):
             replay["field"] = self.field
         if self.names:
             replay["names"] = {str(n): name for n, name in sorted(self.names.items())}
+        # the plates of this race's entrants: not one of an earlier race's, kept from before the recording began
+        names = {e["name"] for e in self.field}
+        plates = {name: plate for name, plate in sorted(self.plates.items()) if name in names}
+        if plates:
+            replay["plates"] = plates
         if self.racer[0]:
             replay["player"] = dict(name=self.racer[0], id=self.racer[1])
         if self.racers:

@@ -73,6 +73,7 @@ class LivePage(QWidget):
     field = Signal(object)   # the race's entrants, passed on from the capture (capture/roster.py)
     track = Signal(str)      # the race's track (a DT_RaceTrack row), passed on from the capture; "" while not known
     names = Signal(object)   # {rival number: name}, passed on from the capture (capture/identity.py)
+    plates = Signal(object)  # {entrant's name: number plate}, passed on from the capture (capture/identity.py)
     player = Signal(str, str)  # the player's own name and account id, passed on from the capture
     standings = Signal(object)  # how far along everyone is, passed on from the capture (capture/progress.py)
     rank = Signal(str, int)     # the player's rank and points, passed on from the capture (capture/ranking.py)
@@ -179,6 +180,7 @@ class LivePage(QWidget):
         self.source.field.connect(self.field)
         self.source.track.connect(self.track)
         self.source.names.connect(self.names)
+        self.source.plates.connect(self.plates)
         self.source.player.connect(self.player)
         self.source.standings.connect(self.standings)
         self.source.rank.connect(self.rank)
@@ -196,6 +198,7 @@ class LivePage(QWidget):
             self.source.field.disconnect()
             self.source.track.disconnect()
             self.source.names.disconnect()
+            self.source.plates.disconnect()
             self.source.player.disconnect()
             self.source.standings.disconnect()
             self.source.rank.disconnect()
@@ -204,6 +207,7 @@ class LivePage(QWidget):
             self.field.emit([])
             self.track.emit("")
             self.names.emit({})
+            self.plates.emit({})
             self.standings.emit(None)
             self.source.stop()
             self.source = None
