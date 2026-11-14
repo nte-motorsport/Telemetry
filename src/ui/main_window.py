@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.live.standings.connect(self.multiplayer.set_standings)
         self.live.rank.connect(self.multiplayer.set_rank)
         self.live.lobby.connect(self.multiplayer.set_lobby)
+        self.live.checkpoints.connect(self.multiplayer.set_checkpoints)
         self.live.player.connect(self.on_player)
         self.prefs = prefs or Prefs({"live": [k for k, _ in LivePage.CHARTS]})
         self.live.set_charts(self.prefs.shown("live"))
@@ -72,6 +73,7 @@ class MainWindow(QMainWindow):
         self.replays = ReplaysPage(store)
         self.replays.set_map_names(self.prefs.option("map_names"))
         self.replays.set_trails(self.prefs.option("map_trails"))
+        self.multiplayer.set_map_names(self.prefs.option("map_names"))
         self.multiplayer.set_trails(self.prefs.option("map_trails"))
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
@@ -178,6 +180,7 @@ class MainWindow(QMainWindow):
             self.set_units()
             self.replays.set_map_names(self.prefs.option("map_names"))
             self.replays.set_trails(self.prefs.option("map_trails"))
+            self.multiplayer.set_map_names(self.prefs.option("map_names"))
             self.multiplayer.set_trails(self.prefs.option("map_trails"))
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))

@@ -383,7 +383,8 @@ class Standings:
     # ----- output -----
 
     def snapshot(self):
-        """dict(length=the track's length in m or None, racers=[dict(id, place, share, metres, who, t)]) in race
+        """dict(length=the track's length in m or None, start=the local time the race got under way or None,
+        racers=[dict(id, place, share, metres, who, t)]) in race
         order, id staying with one racer, share the share of the race done, metres how far along the track (None
         while the length isn't known), who "me", a rival's number or None while not known, t the local time the
         racer's share was last sent, finish the racer's time at the finish (s) and finish_place its place there, both
@@ -406,7 +407,7 @@ class Standings:
         now = max((r["t"] for r in rows), default=0.0)
         for k, r in enumerate(rows):
             r["interval"] = self.interval(r, rows[k - 1], now) if k else None
-        return dict(length=self.length, racers=rows)
+        return dict(length=self.length, racers=rows, start=self.under_way)
 
     STILL = 1.0  # s without its share sent after which a racer is taken to be standing where it was
 

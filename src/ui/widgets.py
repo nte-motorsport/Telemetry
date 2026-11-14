@@ -3,7 +3,7 @@ import html
 import itertools
 import math
 
-from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListView,
                                QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStyledItemDelegate,
@@ -306,6 +306,7 @@ class DriversPanel(QFrame):
     it, another player's from their points in the race's lobby (ui/ranks.py), a bot's none."""
     PLACEHOLDERS = 4  # entries in all at least: dashes for those not known yet
     LOGO = 44  # px: a rank logo's side, about the three lines of an entry
+    UNKNOWN_OPACITY = 0.25  # the first rank's logo, as shown for a player's rank not known yet
 
     def __init__(self, title="Racers"):
         super().__init__()
@@ -320,7 +321,7 @@ class DriversPanel(QFrame):
         self.list.setSpacing(theme.GAP)
         v.addLayout(self.list)
         self.shown = None  # what the entries say, to write them anew only when it changes
-        self.logos = {}  # logo file -> its pixmap, scaled
+        self.logos = {}  # (logo file, opacity) -> its pixmap, scaled
         self.set_racers([])
 
     def set_racers(self, racers):
@@ -340,10 +341,17 @@ class DriversPanel(QFrame):
             row = QHBoxLayout(box)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(theme.GAP)
-            icon = QLabel()  # empty for a bot or a rank not known: the names stay in line
+            icon = QLabel()  # empty for a bot: the names stay in line
             icon.setFixedSize(self.LOGO, self.LOGO)
             icon.setAlignment(Qt.AlignCenter)
-            pix = self.logo(r["rank"]["logo"]) if r and r["rank"] and r["rank"]["logo"] else None
+            if r and r["rank"] and r["rank"]["logo"]:
+                pix = self.logo(r["rank"]["logo"])
+            elif r and r["bot"]:
+                pix = None
+            else:  # not known yet: the first rank's, faded
+                from ui import ranks
+                first = ranks.first_logo()
+                pix = self.logo(first, self.UNKNOWN_OPACITY) if first else None
             if pix:
                 icon.setPixmap(pix)
             row.addWidget(icon)
@@ -368,16 +376,134 @@ class DriversPanel(QFrame):
                 b.addWidget(w)
             self.list.addWidget(box)
 
-    def logo(self, path):
-        """The pixmap of a logo file, scaled to fit, or None if it won't load."""
-        if path not in self.logos:
+    def logo(self, path, opacity=1.0):
+        """The pixmap of a logo file, scaled to fit and at opacity, or None if it won't load."""
+        if (path, opacity) not in self.logos:
             pix = QPixmap(path)
             if not pix.isNull():
                 ratio = self.devicePixelRatioF()
                 pix = pix.scaled(QSize(self.LOGO, self.LOGO) * ratio, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                if opacity < 1:
+                    faded = QPixmap(pix.size())
+                    faded.fill(Qt.transparent)
+                    p = QPainter(faded)
+                    p.setOpacity(opacity)
+                    p.drawPixmap(0, 0, pix)
+                    p.end()
+                    pix = faded
                 pix.setDevicePixelRatio(ratio)
-            self.logos[path] = None if pix.isNull() else pix
-        return self.logos[path]
+            self.logos[(path, opacity)] = None if pix.isNull() else pix
+        return self.logos[(path, opacity)]
+
+
+class MiniStrip(QWidget):
+    """A lap's mini-sectors in a row of bars, each in the colour of its time (ui/sectors.py), dim while not driven."""
+    HEIGHT = 4
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(self.HEIGHT)
+        self.colors = []
+
+    def set_colors(self, colors):
+        if colors != self.colors:
+            self.colors = list(colors)
+            self.update()
+
+    def paintEvent(self, ev):
+        n = len(self.colors)
+        if not n:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        gap = 2
+        w = (self.width() - gap * (n - 1)) / n
+        for i, c in enumerate(self.colors):
+            p.setBrush(QColor(c or theme.GRID))
+            p.drawRoundedRect(QRectF(i * (w + gap), 0, w, self.HEIGHT), 1.5, 1.5)
+        p.end()
+
+
+class SectorsPanel(QFrame):
+    """Each racer's latest time in each of the lap's three sectors, coloured as in real racing (purple the best of
+    anyone's, green their own best, yellow slower than their own best), and their current lap's mini-sectors in a
+    strip below in the same colours (ui/sectors.py)."""
+    PLACEHOLDERS = 4
+
+    def __init__(self, title="Sectors"):
+        super().__init__()
+        self.setProperty("role", "panel")
+        self.setFixedWidth(TimingPanel.WIDTH)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(theme.GAP, theme.GAP, theme.GAP, theme.GAP)
+        v.setSpacing(theme.GAP)
+        v.addWidget(label(title, "sectionTitle"))
+        self.grid = QGridLayout()
+        self.grid.setHorizontalSpacing(theme.GAP)
+        self.grid.setVerticalSpacing(3)
+        for col, text in enumerate(("S1", "S2", "S3")):
+            self.grid.setColumnStretch(col, 1)
+            h = label(text, "muted")
+            h.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.grid.addWidget(h, 0, col)
+        v.addLayout(self.grid)
+        self.rows = []  # (name, lap, [3 sector labels], strip)
+        self.shown = None
+        self.set_rows([])
+
+    def set_rows(self, rows):
+        """rows: [dict(name, bot, color or None, lap: e.g. "L2" or "", sectors: [(seconds, colour) or None] * 3,
+        minis: [colour or None])], in order; [] for placeholders."""
+        if rows == self.shown:
+            return
+        self.shown = rows
+        rows = list(rows) + [None] * (self.PLACEHOLDERS - len(rows))
+        while len(self.rows) < len(rows):
+            k = len(self.rows)
+            name = label()
+            name.setTextFormat(Qt.RichText)
+            name.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # a long name is cut, not the times
+            name.setMinimumWidth(0)
+            lap = label("", "muted")
+            secs = [label() for _ in range(3)]
+            for w in secs:
+                w.setTextFormat(Qt.RichText)
+                w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            strip = MiniStrip()
+            head = QHBoxLayout()
+            head.setSpacing(6)
+            head.addWidget(name, 1)
+            head.addWidget(lap)
+            # each racer in three rows: name and lap, the sectors' times, the mini-sectors; a gap before the next
+            top = 1 + 3 * k
+            self.grid.addLayout(head, top, 0, 1, 3)
+            for col, w in enumerate(secs):
+                self.grid.addWidget(w, top + 1, col)
+            self.grid.addWidget(strip, top + 2, 0, 1, 3)
+            if k:
+                head.setContentsMargins(0, 6, 0, 0)
+            self.rows.append((name, lap, secs, strip))
+        for k, (name, lap, secs, strip) in enumerate(self.rows):
+            r = rows[k] if k < len(rows) else None
+            visible = k < len(rows)
+            for w in (name, lap, strip, *secs):
+                w.setVisible(visible)
+            if r is None:
+                name.setText("—")
+                lap.setText("")
+                for w in secs:
+                    w.setText(f'<span style="color:{theme.MUTED}">—</span>')
+                strip.set_colors([])
+                continue
+            dot = f'<span style="color:{r["color"]}">&#9679;</span>&nbsp;' if r["color"] else ""
+            name.setText(dot + html.escape(shown_name(r["name"], r["bot"])))
+            lap.setText(r["lap"])
+            for w, sec in zip(secs, r["sectors"]):
+                w.setText(f'<span style="color:{sec[1]}">{sec[0]:.3f}</span>' if sec
+                          else f'<span style="color:{theme.MUTED}">—</span>')
+            strip.set_colors(r["minis"])
 
 
 def shown_name(name, bot):

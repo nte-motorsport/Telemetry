@@ -1,0 +1,1217 @@
+{
+ "DLC_RT_C1:08BFB8415EBA45": {
+  "level": "DLC_RT_C1",
+  "track": "DLC_RT_C1",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424106471",
+    "index": 1,
+    "finish": false,
+    "x": -326.48,
+    "y": 234.62,
+    "yaw": 20.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424114472",
+    "index": 2,
+    "finish": false,
+    "x": -380.04,
+    "y": -296.8,
+    "yaw": -65.9,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424120473",
+    "index": 3,
+    "finish": false,
+    "x": -26.29,
+    "y": -377.49,
+    "yaw": 3.05,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424126474",
+    "index": 4,
+    "finish": false,
+    "x": 256.01,
+    "y": -188.65,
+    "yaw": 106.6,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424132475",
+    "index": 5,
+    "finish": false,
+    "x": 210.79,
+    "y": 133.3,
+    "yaw": 25.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424137476",
+    "index": 6,
+    "finish": false,
+    "x": 96.78,
+    "y": 417.13,
+    "yaw": 92.77,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424144477",
+    "index": 7,
+    "finish": false,
+    "x": -11.71,
+    "y": 676.78,
+    "yaw": 179.27,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424150478",
+    "index": 8,
+    "finish": false,
+    "x": -279.52,
+    "y": 698.81,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA456802_1424156479",
+    "index": 9,
+    "finish": true,
+    "x": -407.3,
+    "y": 506.05,
+    "yaw": -92.18,
+    "half": [
+     20.0,
+     40.0
+    ]
+   }
+  ]
+ },
+ "DLC_RT_C1:08BFB8415EBAEB": {
+  "level": "DLC_RT_C1",
+  "track": "DLC_RT_C1",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134201975",
+    "index": 1,
+    "finish": false,
+    "x": -229.47,
+    "y": 721.51,
+    "yaw": -2.52,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134215976",
+    "index": 2,
+    "finish": false,
+    "x": 85.43,
+    "y": 690.29,
+    "yaw": -6.57,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134222977",
+    "index": 3,
+    "finish": false,
+    "x": 118.23,
+    "y": 345.9,
+    "yaw": -67.27,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134230978",
+    "index": 4,
+    "finish": false,
+    "x": 226.03,
+    "y": -29.32,
+    "yaw": -86.56,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134237979",
+    "index": 5,
+    "finish": false,
+    "x": 298.51,
+    "y": -418.36,
+    "yaw": -127.04,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134244980",
+    "index": 6,
+    "finish": false,
+    "x": -30.7,
+    "y": -394.78,
+    "yaw": -169.53,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134252981",
+    "index": 7,
+    "finish": false,
+    "x": -399.55,
+    "y": -258.72,
+    "yaw": 87.49,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134259982",
+    "index": 8,
+    "finish": false,
+    "x": -315.63,
+    "y": 4.85,
+    "yaw": 62.82,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAEB8A02_1134267983",
+    "index": 9,
+    "finish": true,
+    "x": -368.55,
+    "y": 267.02,
+    "yaw": 130.77,
+    "half": [
+     20.0,
+     40.0
+    ]
+   }
+  ]
+ },
+ "DLC_RT_C2:08BFB8415EBAF1": {
+  "level": "DLC_RT_C2",
+  "track": "DLC_RT_C2",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAF1CF02_1570828594",
+    "index": 1,
+    "finish": false,
+    "x": 279.48,
+    "y": 143.01,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAF1CF02_1570839595",
+    "index": 2,
+    "finish": false,
+    "x": -133.18,
+    "y": 261.83,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAF1CF02_1570847596",
+    "index": 3,
+    "finish": false,
+    "x": 2.72,
+    "y": -125.2,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAF1CF02_1570858597",
+    "index": 4,
+    "finish": false,
+    "x": -88.55,
+    "y": -623.46,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAF1CF02_1570868598",
+    "index": 5,
+    "finish": true,
+    "x": 279.64,
+    "y": -349.18,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     20.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:08BFB8415EBA56": {
+  "level": "XL_map_bigworld_test",
+  "track": "Track001_03_pvp",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1821339585",
+    "index": 1,
+    "finish": false,
+    "x": -1398.93,
+    "y": 1790.47,
+    "yaw": -52.0,
+    "half": [
+     10.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894208595",
+    "index": 2,
+    "finish": false,
+    "x": -1150.47,
+    "y": 1624.61,
+    "yaw": -30.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894220596",
+    "index": 3,
+    "finish": false,
+    "x": -1164.42,
+    "y": 1950.31,
+    "yaw": 88.36,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894230597",
+    "index": 4,
+    "finish": false,
+    "x": -1332.33,
+    "y": 2292.09,
+    "yaw": 146.33,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894240598",
+    "index": 5,
+    "finish": false,
+    "x": -1724.25,
+    "y": 2323.48,
+    "yaw": 164.69,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894252599",
+    "index": 6,
+    "finish": false,
+    "x": -2074.04,
+    "y": 2275.21,
+    "yaw": -103.75,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894262600",
+    "index": 7,
+    "finish": false,
+    "x": -2014.33,
+    "y": 1895.76,
+    "yaw": -69.96,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894272601",
+    "index": 8,
+    "finish": false,
+    "x": -1582.32,
+    "y": 1632.0,
+    "yaw": -27.21,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA568702_1894282602",
+    "index": 15,
+    "finish": true,
+    "x": -1438.57,
+    "y": 1806.7,
+    "yaw": -51.96,
+    "half": [
+     40.0,
+     20.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:08BFB8415EBAA1": {
+  "level": "XL_map_bigworld_test",
+  "track": null,
+  "laps": null,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338827072",
+    "index": 1,
+    "finish": false,
+    "x": -862.62,
+    "y": 1249.29,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338845073",
+    "index": 2,
+    "finish": false,
+    "x": -1378.04,
+    "y": 1524.58,
+    "yaw": 64.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338863074",
+    "index": 3,
+    "finish": false,
+    "x": -1580.48,
+    "y": 1631.61,
+    "yaw": 65.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338879075",
+    "index": 4,
+    "finish": false,
+    "x": -1425.04,
+    "y": 1815.2,
+    "yaw": 38.1,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338895076",
+    "index": 5,
+    "finish": false,
+    "x": -1229.96,
+    "y": 1965.8,
+    "yaw": 35.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338910077",
+    "index": 6,
+    "finish": false,
+    "x": -996.52,
+    "y": 1800.05,
+    "yaw": -16.55,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338932078",
+    "index": 7,
+    "finish": false,
+    "x": -769.11,
+    "y": 1654.34,
+    "yaw": -78.55,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAA16602_1338949079",
+    "index": 8,
+    "finish": true,
+    "x": -749.96,
+    "y": 1446.54,
+    "yaw": 3.0,
+    "half": [
+     40.0,
+     20.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:08BFB8415EBAB0": {
+  "level": "XL_map_bigworld_test",
+  "track": "Track004_06_pvp",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638785219",
+    "index": 1,
+    "finish": false,
+    "x": -612.19,
+    "y": -284.83,
+    "yaw": 50.0,
+    "half": [
+     40.0,
+     60.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638800220",
+    "index": 2,
+    "finish": false,
+    "x": -821.71,
+    "y": -229.07,
+    "yaw": 121.16,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638809221",
+    "index": 3,
+    "finish": false,
+    "x": -963.89,
+    "y": -146.6,
+    "yaw": 134.18,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638820222",
+    "index": 4,
+    "finish": false,
+    "x": -1072.46,
+    "y": -197.78,
+    "yaw": 46.06,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638830223",
+    "index": 5,
+    "finish": false,
+    "x": -1024.39,
+    "y": -92.03,
+    "yaw": 44.38,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638838224",
+    "index": 6,
+    "finish": false,
+    "x": -1137.37,
+    "y": -134.17,
+    "yaw": 40.0,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638849225",
+    "index": 7,
+    "finish": false,
+    "x": -1077.99,
+    "y": -27.4,
+    "yaw": 40.0,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638859226",
+    "index": 8,
+    "finish": false,
+    "x": -1259.54,
+    "y": 193.08,
+    "yaw": 20.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638867227",
+    "index": 9,
+    "finish": false,
+    "x": -1172.74,
+    "y": 443.56,
+    "yaw": 75.0,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638878228",
+    "index": 10,
+    "finish": false,
+    "x": -1090.92,
+    "y": 458.6,
+    "yaw": 0.0,
+    "half": [
+     30.0,
+     30.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638887229",
+    "index": 11,
+    "finish": false,
+    "x": -1089.32,
+    "y": 160.8,
+    "yaw": 0.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAB06602_1638897230",
+    "index": 12,
+    "finish": true,
+    "x": -831.85,
+    "y": -0.31,
+    "yaw": 10.0,
+    "half": [
+     40.0,
+     20.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:08BFB8415EBAFE": {
+  "level": "XL_map_bigworld_test",
+  "track": null,
+  "laps": null,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451473152",
+    "index": 1,
+    "finish": false,
+    "x": 441.45,
+    "y": 1351.93,
+    "yaw": 3.21,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451487153",
+    "index": 2,
+    "finish": false,
+    "x": 643.55,
+    "y": 1053.16,
+    "yaw": -94.29,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451499154",
+    "index": 3,
+    "finish": false,
+    "x": 458.53,
+    "y": 703.89,
+    "yaw": -118.64,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451510155",
+    "index": 4,
+    "finish": false,
+    "x": 118.84,
+    "y": 555.71,
+    "yaw": 175.73,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451521156",
+    "index": 5,
+    "finish": false,
+    "x": -278.39,
+    "y": 593.14,
+    "yaw": 165.18,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451533157",
+    "index": 6,
+    "finish": false,
+    "x": -428.22,
+    "y": 920.3,
+    "yaw": 92.39,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451547158",
+    "index": 7,
+    "finish": false,
+    "x": -251.11,
+    "y": 1416.98,
+    "yaw": 75.13,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBAFE6602_1451558159",
+    "index": 8,
+    "finish": true,
+    "x": -48.67,
+    "y": 1384.78,
+    "yaw": -15.0,
+    "half": [
+     20.0,
+     40.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:5811222AC1C36E": {
+  "level": "XL_map_bigworld_test",
+  "track": "Track003_02_pvp",
+  "laps": 1,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267029506",
+    "index": 1,
+    "finish": false,
+    "x": -1757.88,
+    "y": 2083.66,
+    "yaw": -20.8,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267097507",
+    "index": 2,
+    "finish": false,
+    "x": -1686.3,
+    "y": 1965.21,
+    "yaw": 11.3,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267112508",
+    "index": 3,
+    "finish": false,
+    "x": -1500.5,
+    "y": 1968.83,
+    "yaw": -61.26,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267129509",
+    "index": 4,
+    "finish": false,
+    "x": -1405.42,
+    "y": 1797.29,
+    "yaw": -52.0,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267144510",
+    "index": 5,
+    "finish": false,
+    "x": -1258.78,
+    "y": 1662.13,
+    "yaw": -41.95,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267159511",
+    "index": 6,
+    "finish": false,
+    "x": -1090.83,
+    "y": 1558.32,
+    "yaw": -44.73,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267182513",
+    "index": 7,
+    "finish": false,
+    "x": -763.38,
+    "y": 1340.06,
+    "yaw": -26.32,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267196514",
+    "index": 8,
+    "finish": false,
+    "x": -584.18,
+    "y": 1251.25,
+    "yaw": -26.46,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267209515",
+    "index": 9,
+    "finish": false,
+    "x": -408.06,
+    "y": 1158.94,
+    "yaw": -26.44,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267222516",
+    "index": 10,
+    "finish": false,
+    "x": -230.42,
+    "y": 1071.0,
+    "yaw": -26.44,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267234517",
+    "index": 11,
+    "finish": false,
+    "x": -49.72,
+    "y": 986.8,
+    "yaw": -26.44,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267247518",
+    "index": 12,
+    "finish": false,
+    "x": 129.54,
+    "y": 898.12,
+    "yaw": -26.33,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267260519",
+    "index": 13,
+    "finish": false,
+    "x": 308.26,
+    "y": 808.45,
+    "yaw": -26.81,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267273520",
+    "index": 14,
+    "finish": false,
+    "x": 484.1,
+    "y": 746.42,
+    "yaw": 71.05,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267322524",
+    "index": 15,
+    "finish": false,
+    "x": 413.3,
+    "y": 1418.65,
+    "yaw": 154.06,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267335525",
+    "index": 16,
+    "finish": false,
+    "x": 248.48,
+    "y": 1468.82,
+    "yaw": 162.99,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267414531",
+    "index": 17,
+    "finish": false,
+    "x": -910.28,
+    "y": 1790.32,
+    "yaw": 176.48,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267428532",
+    "index": 18,
+    "finish": false,
+    "x": -1079.85,
+    "y": 1826.8,
+    "yaw": 149.8,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267441533",
+    "index": 19,
+    "finish": false,
+    "x": -1239.06,
+    "y": 1980.1,
+    "yaw": 125.35,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267453534",
+    "index": 20,
+    "finish": false,
+    "x": -1333.67,
+    "y": 2192.44,
+    "yaw": 137.29,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267479536",
+    "index": 21,
+    "finish": false,
+    "x": -1662.97,
+    "y": 2233.99,
+    "yaw": -165.44,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_5811222AC1C36E6102_1267531540",
+    "index": 22,
+    "finish": true,
+    "x": -2026.81,
+    "y": 1970.59,
+    "yaw": -86.23,
+    "half": [
+     20.0,
+     40.0
+    ]
+   }
+  ]
+ },
+ "XL_map_bigworld_test:BCFCE7626E2D59": {
+  "level": "XL_map_bigworld_test",
+  "track": null,
+  "laps": null,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184687147",
+    "index": 1,
+    "finish": false,
+    "x": -3179.61,
+    "y": -1138.03,
+    "yaw": 122.8,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184719148",
+    "index": 2,
+    "finish": false,
+    "x": -3176.69,
+    "y": -968.08,
+    "yaw": 57.6,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184728149",
+    "index": 3,
+    "finish": false,
+    "x": -3125.19,
+    "y": -878.09,
+    "yaw": 65.05,
+    "half": [
+     30.16,
+     28.62
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184736150",
+    "index": 4,
+    "finish": false,
+    "x": -3106.05,
+    "y": -798.69,
+    "yaw": 82.47,
+    "half": [
+     29.95,
+     19.14
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184744151",
+    "index": 5,
+    "finish": false,
+    "x": -3086.29,
+    "y": -661.78,
+    "yaw": 70.49,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184751152",
+    "index": 6,
+    "finish": false,
+    "x": -2989.11,
+    "y": -488.45,
+    "yaw": 49.43,
+    "half": [
+     40.0,
+     29.25
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184761153",
+    "index": 7,
+    "finish": false,
+    "x": -2895.93,
+    "y": -522.63,
+    "yaw": -85.13,
+    "half": [
+     36.16,
+     28.06
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184770154",
+    "index": 8,
+    "finish": false,
+    "x": -2985.21,
+    "y": -643.05,
+    "yaw": -107.8,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184778155",
+    "index": 9,
+    "finish": false,
+    "x": -3041.47,
+    "y": -761.1,
+    "yaw": -112.83,
+    "half": [
+     32.03,
+     22.29
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184787156",
+    "index": 10,
+    "finish": false,
+    "x": -3003.25,
+    "y": -1008.67,
+    "yaw": -143.01,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184795157",
+    "index": 11,
+    "finish": false,
+    "x": -2983.28,
+    "y": -1175.79,
+    "yaw": -61.41,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184806158",
+    "index": 12,
+    "finish": false,
+    "x": -2878.85,
+    "y": -1391.36,
+    "yaw": -82.67,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184814159",
+    "index": 13,
+    "finish": false,
+    "x": -3034.67,
+    "y": -1428.67,
+    "yaw": -163.7,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_BCFCE7626E2D59F102_1184822160",
+    "index": 14,
+    "finish": true,
+    "x": -3062.69,
+    "y": -1304.6,
+    "yaw": 96.21,
+    "half": [
+     40.0,
+     40.0
+    ]
+   }
+  ]
+ }
+}
