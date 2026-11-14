@@ -89,6 +89,12 @@ def from_row(row):
     return order[k] if 0 <= k < len(order) else None
 
 
+def first_logo():
+    """The file of the first rank's logo (Rookie's), shown faded for a rank not known yet; or None."""
+    order = ranks().ordered()
+    return logo(order[0]) if order else None
+
+
 def logo(rank):
     """The file of rank's logo, or None while it isn't there."""
     path = ranks().logo_path(rank) if rank else None

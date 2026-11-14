@@ -7,11 +7,11 @@ from collections import deque
 import numpy as np
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from ui import charts, standings, theme, units
+from ui import charts, sectors, standings, theme, units
 from ui.world_map import MapPicker, all_maps
 from ui import ranks
 from ui.vehicles import car_name
-from ui.widgets import DriversPanel, TimingPanel, card
+from ui.widgets import DriversPanel, SectorsPanel, TimingPanel, card, map_name
 
 WINDOW = 60  # seconds of tracks and speed shown
 MAP_EVERY = 2.0  # s between looks at which game map the tracks are on (while the world isn't known)
@@ -40,6 +40,10 @@ class MultiplayerPage(QWidget):
         self.names = {}  # rival number -> entrant's name, as the capture matched them
         self.snapshot = None  # how far along everyone is, as last sent (capture/progress.py), or None
         self.trails = True  # each car's last minute drawn behind its marker on the map (Settings)
+        self.map_names = "full"  # how racers are named on the map, a key of widgets.MAP_NAMES (Settings)
+        self.course = None  # the race's checkpoints, see capture/checkpoints.py, or None while not known
+        self.timer = None   # sectors.Timer of the race (the last one's until the next starts), or None
+        self.timer_for = None  # (checkpoint set id, start) the timer is of
         self.dirty = True
 
         v = QVBoxLayout(self)
@@ -59,6 +63,8 @@ class MultiplayerPage(QWidget):
         left.setSpacing(theme.GAP)
         left.addWidget(self.racers)
         left.addWidget(self.drivers)
+        self.sectors = SectorsPanel()
+        left.addWidget(self.sectors)
         left.addStretch()
         h.addLayout(left)
         self.c_map = charts.MapChart()
@@ -74,6 +80,8 @@ class MultiplayerPage(QWidget):
 
     def on_own(self, d):
         self.me.append((d["w"], d["x"], d["y"], d["speed_kmh"]))
+        if self.timer:
+            self.timer.feed("me", d["w"], d["x"], d["y"])
         self.trim(self.me, d["w"])
         self.dirty = True
 
@@ -83,6 +91,8 @@ class MultiplayerPage(QWidget):
             if not hist or hist[-1][0] != c["t"]:  # cars the packet didn't move come back unchanged
                 v = c["speed_kmh"]
                 hist.append((c["t"], c["x"], c["y"], math.nan if v is None else v))
+                if self.timer:
+                    self.timer.feed(num, c["t"], c["x"], c["y"])
                 self.trim(hist, c["t"])
         self.left = {n for n in self.rivals if n not in cars}
         self.dirty = True
@@ -147,7 +157,52 @@ class MultiplayerPage(QWidget):
     def set_standings(self, snapshot):
         """How far along everyone is (progress.Standings.snapshot), from the capture; None out of a race."""
         self.snapshot = snapshot
+        self.time_race()
         self.show_standings()
+
+    def set_checkpoints(self, course):
+        """The race's set of checkpoints (capture/checkpoints.py), from the capture; None when none is known."""
+        self.course = course
+        self.time_race()
+
+    def time_race(self):
+        """A new sectors.Timer once a race with known checkpoints gets under way (the last race's stays until then),
+        and the finishes the race server sent, to it."""
+        s = self.snapshot
+        if self.course and s and s.get("start") is not None:
+            key = (self.course["id"], s["start"])
+            if key != self.timer_for:
+                self.timer_for = key
+                self.timer = sectors.Timer(self.course["checkpoints"], self.course.get("laps"))
+                self.timer.set_start(sectors.launch([(t, v) for t, _, _, v in self.me], s["start"]))
+        if self.timer and s:
+            for r in s["racers"]:
+                if r["finish"] is not None and r["who"] is not None:
+                    self.timer.finished(r["who"], r["finish"])
+        self.dirty = True
+
+    def show_sectors(self):
+        """Each entrant's sector times, in race order."""
+        if not self.timer:
+            self.sectors.set_rows([])
+            return
+        table = self.timer.table()
+        key_of = {name: num for num, name in self.names.items()}
+        rows = []
+        entrants = self.racers.order()
+        if not entrants:  # the race's field not known: the cars timed, by number
+            entrants = [dict(name=self.racers.me or "You", me=True)] if "me" in table else []
+            entrants += [dict(name=self.names.get(k, f"Car {k}"), key=k) for k in sorted(table, key=str) if k != "me"]
+        for e in entrants:
+            me = e.get("me") or (bool(self.racers.me) and e["name"] == self.racers.me)
+            t = table.get("me" if me else e.get("key", key_of.get(e["name"])))
+            laps = self.timer.laps
+            lap = f"L{t['lap']}/{laps}" if t and laps else f"L{t['lap']}" if t else ""
+            rows.append(dict(name=e["name"], bot=bool(e.get("bot")), lap=lap,
+                             color=theme.ACCENT if me else self.racers.colors.get(e["name"]),
+                             sectors=t["sectors"] if t else [None] * sectors.SECTORS,
+                             minis=t["minis"] if t else [None] * len(self.timer.cps)))
+        self.sectors.set_rows(rows)
 
     def show_standings(self):
         """Each entrant's place and how far behind the racer ahead, in their row."""
@@ -163,6 +218,17 @@ class MultiplayerPage(QWidget):
     def set_trails(self, on):
         """Draw each car's last minute behind its marker on the map, or the markers alone."""
         self.trails = on
+        self.dirty = True
+
+    def map_label(self, name):
+        """An entrant's name as written over their marker on the map, as Settings say ("" for one not known)."""
+        if not name:
+            return ""
+        bot = any(e["name"] == name and e.get("bot") for e in self.racers.entrants)
+        return map_name(name, bot, self.map_names)
+
+    def set_map_names(self, mode):
+        self.map_names = mode
         self.dirty = True
 
     def set_world(self, level):
@@ -185,11 +251,13 @@ class MultiplayerPage(QWidget):
         if not self.dirty:
             return
         self.dirty = False
+        self.show_sectors()
         now = time.monotonic()
-        cars = [(theme.ACCENT, self.me)] + [(rival_color(n), h) for n, h in sorted(self.rivals.items())]
+        cars = [(theme.ACCENT, self.me, self.map_label(self.racers.me or "You"))]
+        cars += [(rival_color(n), h, self.map_label(self.names.get(n))) for n, h in sorted(self.rivals.items())]
         tracks, markers, series = [], [], []
         area = ([], [])  # where the cars have been: the view is fitted to it when the trails aren't drawn
-        for color, h in cars:
+        for color, h, name in cars:
             if not h:
                 continue
             a = np.array(h, float)
@@ -199,7 +267,7 @@ class MultiplayerPage(QWidget):
             else:
                 area[0].extend(a[:, 1])
                 area[1].extend(a[:, 2])
-            markers.append((a[-1, 1], a[-1, 2], color))
+            markers.append((a[-1, 1], a[-1, 2], color, name))
             series.append((a[:, 0] - now, units.speed(a[:, 3]), color, 2.2 if h is self.me else 1.8))
         if now - self.map_at >= MAP_EVERY:
             self.map_at = now

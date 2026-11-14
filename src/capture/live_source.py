@@ -5,7 +5,7 @@ from collections import deque
 
 from PySide6.QtCore import QThread, Signal
 
-from capture import opponents, progress, ranking
+from capture import checkpoints, opponents, progress, ranking
 from capture.ranking import Ranking
 from capture.identity import Identity
 from capture.levels import find_level
@@ -67,6 +67,7 @@ class LiveSource(QThread):
                                 # a race is over (teleported away)
     rank = Signal(str, int)     # the player's rank and points (capture/ranking.py), whenever a server names them anew
     lobby = Signal(object)      # the latest lobby's players, see ranking.Ranking.lobby, as its records come in
+    checkpoints = Signal(object)  # the race's set of checkpoints, see checkpoints.find, once its server names one
     ALIVE = 5.0   # s: the game's flow counts as alive this long after its last fix
     PROBES = 64   # flows watched at most at once
     STANDINGS_EVERY = 0.25  # s between standings sent on
@@ -100,6 +101,7 @@ class LiveSource(QThread):
         self.race_track = ""  # as last emitted
         self.named = {}     # as last emitted
         self.plated = {}    # as last emitted
+        self.course = None  # the id of the set of checkpoints last emitted
         self.me = ""        # the player's name, see Identity.match: from the game (player), else as set
         self.role = None    # the player's own (account id, name), as last emitted
         self.ranking = Ranking()  # the player's standing and the latest lobby, from any of the game's servers
@@ -225,6 +227,10 @@ class LiveSource(QThread):
                     self.identities.clear()
                 ident = self.identities[(sport, dport)] = Identity()
             ident.feed(payload, now)
+            course = checkpoints.find(payload)
+            if course and course["id"] != self.course:
+                self.course = course["id"]
+                self.checkpoints.emit(course)
         elif ranking.named(payload):
             # a server whose world wasn't named on this flow: the capture began after the game connected to it
             # (2026-11-11: two lobbies of the world the player waited in were missed so)
