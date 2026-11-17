@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
         self.live.names.connect(self.recorder.set_names)
         self.live.plates.connect(self.recorder.set_plates)
         self.live.standings.connect(self.recorder.on_standings)
+        self.live.checkpoints.connect(self.recorder.set_checkpoints)
         self.live.rank.connect(self.recorder.set_rank)
         self.live.lobby.connect(self.recorder.set_lobby)
         self.recorder.recording.connect(self.live.set_recording)
