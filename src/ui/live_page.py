@@ -140,8 +140,8 @@ class LivePage(QWidget):
         v.addWidget(self.grid, 1)
 
     def build_statusbar(self):
-        """The bar along the bottom of the window: whether data is coming in, and whether a race is being recorded,
-        in one line of text."""
+        """The bar along the bottom of the window: whether data is coming in, and or, while a race is being
+        recorded, that instead (the dot blinking), in one line of text."""
         bar = QFrame()
         bar.setObjectName("statusBar")
         bar.setFixedHeight(theme.CONTROL_HEIGHT + theme.GAP)
@@ -296,11 +296,14 @@ class LivePage(QWidget):
         self.dirty = True
 
     def tick(self):
-        ok = time.monotonic() - self.last_msg < 3
+        now = time.monotonic()
+        ok = now - self.last_msg < 3
         color = (theme.ACCENT if not self.in_car else "#3ad164") if ok else theme.DANGER
-        self.dot.setStyleSheet(f"background:{color}; border-radius:5px;")
         where = self.source_desc + (f", {self.level.rsplit('/', 1)[-1]}" if self.level else "")
-        if ok and not self.in_car:
+        if self.recording:  # in place of the rest, the dot blinking red: on half a second, off half a second
+            color = theme.DANGER if int(now * 2) % 2 == 0 else "transparent"
+            text = f"Recording race ({where})"
+        elif ok and not self.in_car:
             text = f"On foot: paused until you get in a car ({where})"
         elif ok:
             text = f"In a car, receiving data ({where})"
@@ -308,10 +311,8 @@ class LivePage(QWidget):
             text = self.error
         else:
             text = f"No data: not in a car or no game traffic ({self.source_desc})"
-        text = html.escape(text)
-        if self.recording:
-            text += f'&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:{theme.DANGER}">●</span> Recording race'
-        self.status.setText(text)
+        self.dot.setStyleSheet(f"background:{color}; border-radius:5px;")
+        self.status.setText(html.escape(text))
         self.dirty = True  # the charts' time axis moves even without new data
 
     # ----- rendering -----

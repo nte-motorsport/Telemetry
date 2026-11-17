@@ -240,7 +240,8 @@ class TimingPanel(QFrame):
         self.refresh()
 
     def set_standings(self, standings):
-        """{name, or "" for the player: (place, seconds after the racer ahead or None, whether finished)}; {} for
+        """{name, or "" for the player: (place, seconds after the racer ahead or None, whether finished, seconds after
+        the leader or None)}; {} for
         none. The interval of two finishers is the race server's, to the millisecond; one on the way is good to a
         tenth or two, so written to the tenth."""
         self.standings = dict(standings)
@@ -254,9 +255,11 @@ class TimingPanel(QFrame):
         self.entrants = list(entrants)
         while len(self.rows) < max(len(self.entrants), self.PLACEHOLDERS):
             row = len(self.rows)
-            cells = (label("", "muted"), label(), label("", "muted"))
+            cells = (label("", "muted"), label(), label("", "muted"), label("", "muted"))
             cells[1].setTextFormat(Qt.RichText)
+            cells[1].setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # a long name is cut, not the times
             cells[2].setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            cells[3].setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             for col, w in enumerate(cells):
                 self.grid.addWidget(w, row, col)
             self.rows.append(cells)
@@ -288,6 +291,7 @@ class TimingPanel(QFrame):
                 cells[0].setText(f"P{place}" if known else "—")
                 cells[1].setText(f'<span style="color:{theme.MUTED}">—</span>')
                 cells[2].setText("Interval" if known and place == 1 else "—")
+                cells[3].setText("Leader" if known and place == 1 else "—")
                 continue
             e = placed[k]
             st = self.standing(e["name"])
@@ -298,15 +302,19 @@ class TimingPanel(QFrame):
             cells[1].setText(dot + html.escape(shown_name(e["name"], e.get("bot"))))
             cells[2].setText("" if not st else "Interval" if st[0] == 1
                              else f"+{st[1]:.{3 if st[2] else 1}f}" if st[1] is not None else "")
+            gap = st[3] if st and len(st) > 3 else None
+            cells[3].setText("" if not st else "Leader" if st[0] == 1
+                             else f"+{gap:.{3 if st[2] else 1}f}" if gap is not None else "")
 
 
 class DriversPanel(QFrame):
     """A race's entrants in detail, in the order they are given: each one's name (in the colour of their car on the
     map and the charts), car, and rank with points, the rank's logo on the left: the player's own as the server names
-    it, another player's from their points in the race's lobby (ui/ranks.py), a bot's none."""
+    it, another player's from their points in the race's lobby (ui/ranks.py); a bot's, or one not known yet, the first
+    rank's faded."""
     PLACEHOLDERS = 4  # entries in all at least: dashes for those not known yet
     LOGO = 44  # px: a rank logo's side, about the three lines of an entry
-    UNKNOWN_OPACITY = 0.25  # the first rank's logo, as shown for a player's rank not known yet
+    UNKNOWN_OPACITY = 0.25  # the first rank's logo, as shown for a bot or a rank not known yet
 
     def __init__(self, title="Racers"):
         super().__init__()
@@ -341,14 +349,12 @@ class DriversPanel(QFrame):
             row = QHBoxLayout(box)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(theme.GAP)
-            icon = QLabel()  # empty for a bot: the names stay in line
+            icon = QLabel()  # empty only while no logo is there at all: the names stay in line
             icon.setFixedSize(self.LOGO, self.LOGO)
             icon.setAlignment(Qt.AlignCenter)
             if r and r["rank"] and r["rank"]["logo"]:
                 pix = self.logo(r["rank"]["logo"])
-            elif r and r["bot"]:
-                pix = None
-            else:  # not known yet: the first rank's, faded
+            else:  # a bot's, or a rank not known yet: the first rank's, faded
                 from ui import ranks
                 first = ranks.first_logo()
                 pix = self.logo(first, self.UNKNOWN_OPACITY) if first else None
@@ -428,8 +434,10 @@ class MiniStrip(QWidget):
 class SectorsPanel(QFrame):
     """Each racer's latest time in each of the lap's three sectors, coloured as in real racing (purple the best of
     anyone's, green their own best, yellow slower than their own best), and their current lap's mini-sectors in a
-    strip below in the same colours (ui/sectors.py)."""
+    strip below in the same colours (ui/sectors.py). Each racer named by three letters, as in races (map_name), on
+    the line of their times."""
     PLACEHOLDERS = 4
+    PLACEHOLDER_MINIS = 3  # grey mini-sectors to a sector in a row not known yet
 
     def __init__(self, title="Sectors"):
         super().__init__()
@@ -443,7 +451,7 @@ class SectorsPanel(QFrame):
         self.grid = QGridLayout()
         self.grid.setHorizontalSpacing(theme.GAP)
         self.grid.setVerticalSpacing(3)
-        for col, text in enumerate(("S1", "S2", "S3")):
+        for col, text in enumerate(("S1", "S2", "S3"), 2):  # after the name's and the lap's columns
             self.grid.setColumnStretch(col, 1)
             h = label(text, "muted")
             h.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -464,26 +472,21 @@ class SectorsPanel(QFrame):
             k = len(self.rows)
             name = label()
             name.setTextFormat(Qt.RichText)
-            name.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # a long name is cut, not the times
-            name.setMinimumWidth(0)
             lap = label("", "muted")
             secs = [label() for _ in range(3)]
             for w in secs:
                 w.setTextFormat(Qt.RichText)
                 w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             strip = MiniStrip()
-            head = QHBoxLayout()
-            head.setSpacing(6)
-            head.addWidget(name, 1)
-            head.addWidget(lap)
-            # each racer in three rows: name and lap, the sectors' times, the mini-sectors; a gap before the next
-            top = 1 + 3 * k
-            self.grid.addLayout(head, top, 0, 1, 3)
-            for col, w in enumerate(secs):
-                self.grid.addWidget(w, top + 1, col)
-            self.grid.addWidget(strip, top + 2, 0, 1, 3)
+            # each racer in two rows: name, lap and the sectors' times; the mini-sectors below
+            top = 1 + 2 * k
+            self.grid.addWidget(name, top, 0)
+            self.grid.addWidget(lap, top, 1)
+            for col, w in enumerate(secs, 2):
+                self.grid.addWidget(w, top, col)
+            self.grid.addWidget(strip, top + 1, 0, 1, 5)
             if k:
-                head.setContentsMargins(0, 6, 0, 0)
+                self.grid.setRowMinimumHeight(top, QFontMetrics(name.font()).height() + 6)  # a gap before the next
             self.rows.append((name, lap, secs, strip))
         for k, (name, lap, secs, strip) in enumerate(self.rows):
             r = rows[k] if k < len(rows) else None
@@ -495,10 +498,10 @@ class SectorsPanel(QFrame):
                 lap.setText("")
                 for w in secs:
                     w.setText(f'<span style="color:{theme.MUTED}">—</span>')
-                strip.set_colors([])
+                strip.set_colors([None] * (3 * self.PLACEHOLDER_MINIS))
                 continue
             dot = f'<span style="color:{r["color"]}">&#9679;</span>&nbsp;' if r["color"] else ""
-            name.setText(dot + html.escape(shown_name(r["name"], r["bot"])))
+            name.setText(dot + html.escape(map_name(r["name"], r["bot"], "short")))
             lap.setText(r["lap"])
             for w, sec in zip(secs, r["sectors"]):
                 w.setText(f'<span style="color:{sec[1]}">{sec[0]:.3f}</span>' if sec
