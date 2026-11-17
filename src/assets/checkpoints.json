@@ -1213,5 +1213,72 @@
     ]
    }
   ]
+ },
+ "XL_map_bigworld_test:08BFB8415EBA0E": {
+  "level": "XL_map_bigworld_test",
+  "track": "Track005_04_pvp",
+  "laps": 2,
+  "checkpoints": [
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA0E8302_1704242348",
+    "index": 1,
+    "finish": false,
+    "x": -26.51,
+    "y": 963.7,
+    "yaw": -198.56,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA0E8302_1704253349",
+    "index": 2,
+    "finish": false,
+    "x": -536.96,
+    "y": 763.45,
+    "yaw": -176.51,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA0E8302_1704263350",
+    "index": 3,
+    "finish": false,
+    "x": -362.75,
+    "y": 1603.57,
+    "yaw": 76.25,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA0E8302_1704271351",
+    "index": 4,
+    "finish": false,
+    "x": 438.27,
+    "y": 1405.82,
+    "yaw": -23.64,
+    "half": [
+     40.0,
+     40.0
+    ]
+   },
+   {
+    "name": "BP_RaceCheckPointActor_C_UAID_08BFB8415EBA0E8302_1704281352",
+    "index": 5,
+    "finish": true,
+    "x": 540.21,
+    "y": 838.55,
+    "yaw": -29.8,
+    "half": [
+     40.0,
+     20.0
+    ]
+   }
+  ]
  }
 }

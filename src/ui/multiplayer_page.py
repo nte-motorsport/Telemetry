@@ -42,7 +42,7 @@ class MultiplayerPage(QWidget):
         self.trails = True  # each car's last minute drawn behind its marker on the map (Settings)
         self.map_names = "full"  # how racers are named on the map, a key of widgets.MAP_NAMES (Settings)
         self.course = None  # the race's checkpoints, see capture/checkpoints.py, or None while not known
-        self.timer = None   # sectors.Timer of the race (the last one's until the next starts), or None
+        self.timer = None   # sectors.Timer of the race while its data comes, or None
         self.timer_for = None  # (checkpoint set id, start) the timer is of
         self.dirty = True
 
@@ -166,9 +166,11 @@ class MultiplayerPage(QWidget):
         self.time_race()
 
     def time_race(self):
-        """A new sectors.Timer once a race with known checkpoints gets under way (the last race's stays until then),
-        and the finishes the race server sent, to it."""
+        """A new sectors.Timer once a race with known checkpoints gets under way, and the finishes the race server
+        sent, to it; none once the race's data stops coming (the standings gone, as the rest of the page's)."""
         s = self.snapshot
+        if not s or not self.course:
+            self.timer = self.timer_for = None
         if self.course and s and s.get("start") is not None:
             key = (self.course["id"], s["start"])
             if key != self.timer_for:
@@ -212,7 +214,7 @@ class MultiplayerPage(QWidget):
             self.show_drivers()
             return
         named = standings.by_name(s["racers"], self.names, self.racers.me, self.racers.entrants)
-        self.racers.set_standings({n: (r["place"], r["interval"], r["finish"] is not None) for n, r in named.items()})
+        self.racers.set_standings({n: (r["place"], r["interval"], r["finish"] is not None, r.get("gap")) for n, r in named.items()})
         self.show_drivers()
 
     def set_trails(self, on):

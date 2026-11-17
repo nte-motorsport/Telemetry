@@ -118,7 +118,12 @@ class Identity:
                     continue
                 nxt = next_string(n, bit + 32 + 8 * (len(tag) + 1), nbits)
                 if nxt and PART.match(nxt):  # not the bot's entrant record, which has "Robot0045" next
-                    self.tags[self.untagged] = tag
+                    # only right after the car was made, and a car's first: the server sends cars' parts again
+                    # later, and a bot's name with them may then follow another car's (2026-11-15: a bot's name
+                    # resent after a car's export given to the other bot, both bots then of one name)
+                    fresh = now is None or self.last_at is None or now - self.last_at <= PLATE_WITHIN
+                    if fresh:
+                        self.tags.setdefault(self.untagged, tag)
                     self.untagged = None
 
     @staticmethod

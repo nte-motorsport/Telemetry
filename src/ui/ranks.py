@@ -90,7 +90,7 @@ def from_row(row):
 
 
 def first_logo():
-    """The file of the first rank's logo (Rookie's), shown faded for a rank not known yet; or None."""
+    """The file of the first rank's logo (Rookie's), shown faded for a bot or a rank not known yet; or None."""
     order = ranks().ordered()
     return logo(order[0]) if order else None
 

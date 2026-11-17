@@ -389,7 +389,7 @@ class Standings:
         while the length isn't known), who "me", a rival's number or None while not known, t the local time the
         racer's share was last sent, finish the racer's time at the finish (s) and finish_place its place there, both
         None until it has finished, interval how many seconds after the racer ahead it got where it is (None for the
-        leader and when not known; see interval). Those finished at the places they finished in, the rest in the
+        leader and when not known; see interval), gap the same after the leader. Those finished at the places they finished in, the rest in the
         places left by how far along they are (fill_places)."""
         rows = []
         for i, r in enumerate(self.racers):
@@ -407,6 +407,12 @@ class Standings:
         now = max((r["t"] for r in rows), default=0.0)
         for k, r in enumerate(rows):
             r["interval"] = self.interval(r, rows[k - 1], now) if k else None
+            # to the leader: as to the racer ahead, the leader's history being the one looked at; one further back
+            # than it holds (KEEP) by the intervals between, when all are known
+            gap = self.interval(r, rows[0], now) if k else None
+            if k and gap is None and all(o["interval"] is not None for o in rows[1:k + 1]):
+                gap = sum(o["interval"] for o in rows[1:k + 1])
+            r["gap"] = gap
         return dict(length=self.length, racers=rows, start=self.under_way)
 
     STILL = 1.0  # s without its share sent after which a racer is taken to be standing where it was
