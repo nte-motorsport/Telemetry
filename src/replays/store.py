@@ -24,7 +24,15 @@ A replay: {"version": 1, "started": "2026-10-30T18:05:12", "duration": s,
            or the capture missed it; from 2026-11-10 on),
            "lobby": [{"name": "...", "id": "100000000001", "points": 8918, "car": "Vehicle026"}, ...] (the players
            the race was matched with, the player among them, and their points before it; when the capture saw them:
-           not in every race of the main world; from 2026-11-10 on)}
+           not in every race of the main world; from 2026-11-10 on),
+           "sectors": {"course": {"id": "DLC_RT_C2:08BFB8415EBAF1", "track": ..., "laps": 2, "checkpoints": [...]},
+                       "start": t, "groups": [[0, 1], [2, 3], [4]],
+                       "racers": {"me": {"cross": [[lap, checkpoint, t], ...], "done": t}, "2": {...}, ...}}
+           (the race's sectors as the Multiplayer page timed them live, ui/sectors.py: the race's set of checkpoints
+           as the game's files have it, assets/checkpoints.json, each with its middle and box; the start they were
+           timed from; the checkpoints in each of the three sectors; and each racer's checkpoint passes, by its key in
+           "rivals" or "me", and when it was done, if it was. From 2026-11-17 on; a replay without it has them timed
+           anew from its positions)}
 with t in seconds from the start of the recording.
 
 Next to a replay, with the same name, may be its raw traffic: <name>.pcap.gz, every packet the capture saw while

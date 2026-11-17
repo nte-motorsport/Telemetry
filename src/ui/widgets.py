@@ -457,6 +457,7 @@ class SectorsPanel(QFrame):
             h.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.grid.addWidget(h, 0, col)
         v.addLayout(self.grid)
+        v.addStretch()  # the rows at the top of a panel made taller than they are
         self.rows = []  # (name, lap, [3 sector labels], strip)
         self.shown = None
         self.set_rows([])

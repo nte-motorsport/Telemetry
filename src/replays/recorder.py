@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal
 
 from capture.pcap import PcapWriter
 from replays.store import own_track
+from ui import sectors
 
 
 class RaceRecorder(QObject):
@@ -33,8 +34,13 @@ class RaceRecorder(QObject):
         # one driven on later
         self.player = ("", "")
         self.rank_now = None  # the player's (rank, points) as last named (capture/ranking.py)
+        self.snapshot = None  # the standings as last sent
         self.lobby_now = []  # the latest lobby's players as last known: they come some 10 s before the race server
         self.plates_now = {}  # {entrant's name: number plate} as last known: the cars are made before the race
+        # the race's sector times, timed as the Multiplayer page times them (on the same data), kept with its replay
+        # so it shows them as they were timed: the latest timer of the race being recorded and its checkpoints
+        self.timing = sectors.RaceTiming()
+        self.race_timer = self.race_course = None
 
     def set_enabled(self, on):
         self.enabled = on
@@ -88,9 +94,21 @@ class RaceRecorder(QObject):
         if self.active:
             self.names.update(names)  # a name once matched stays: the capture forgets them at the finish
 
+    def set_checkpoints(self, course):
+        """The race's set of checkpoints (capture/checkpoints.py), None when none is known."""
+        self.timing.set_course(course, self.snapshot)
+        self.keep_timer()
+
+    def keep_timer(self):
+        if self.active and self.timing.timer:
+            self.race_timer, self.race_course = self.timing.timer, self.timing.course
+
     def on_standings(self, snapshot):
         """How far along everyone is (progress.Standings.snapshot): each racer's share of the race done whenever it
         changes, and who they turned out to be."""
+        self.snapshot = snapshot
+        self.timing.update(snapshot)
+        self.keep_timer()
         if not self.active or not snapshot:
             return
         if snapshot["length"]:
@@ -142,6 +160,8 @@ class RaceRecorder(QObject):
         self.rank_before, self.rank_after = self.rank_now, None
         self.lobby = self.lobby_now
         self.last_rival = now
+        self.race_timer = self.race_course = None
+        self.keep_timer()
         if self.raw:
             try:
                 self.writer = PcapWriter(self.store.raw_tmp(self.started))
@@ -151,6 +171,7 @@ class RaceRecorder(QObject):
         self.recording.emit(True)
 
     def on_own(self, d):
+        self.timing.on_own(d["w"], d["x"], d["y"], d["speed_kmh"])
         if self.active:
             self.me.append([round(d["w"] - self.t0, 3), d["x"], d["y"], d["z"], d["speed_kmh"]])
 
@@ -164,6 +185,7 @@ class RaceRecorder(QObject):
             if self.last_t.get(num) == c["t"]:  # not moved since the last packet
                 continue
             self.last_t[num] = c["t"]
+            self.timing.on_rival(num, c["t"], c["x"], c["y"])
             v = c["speed_kmh"]
             self.bots[num] = self.bots.get(num, 0) + (1 if c.get("bot") else -1)
             self.rivals.setdefault(str(num), []).append(
@@ -224,6 +246,11 @@ class RaceRecorder(QObject):
         lobby = [dict(e) for e in self.lobby if e["name"] in names]
         if len(lobby) >= 2 and len(lobby) * 2 > len(self.lobby):
             replay["lobby"] = lobby
+        if self.race_timer and self.race_timer.start is not None:
+            c = self.race_course
+            replay["sectors"] = dict(course=dict(id=c["id"], track=c.get("track"), laps=c.get("laps"),
+                                                 checkpoints=c["checkpoints"]),
+                                     **self.race_timer.record(shift=self.t0 + t_lo))
         bots = [str(n) for n, votes in sorted(self.bots.items()) if votes > 0]
         if bots:
             replay["bots"] = bots

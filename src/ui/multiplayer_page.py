@@ -5,7 +5,7 @@ import time
 from collections import deque
 
 import numpy as np
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from ui import charts, sectors, standings, theme, units
 from ui.world_map import MapPicker, all_maps
@@ -41,9 +41,7 @@ class MultiplayerPage(QWidget):
         self.snapshot = None  # how far along everyone is, as last sent (capture/progress.py), or None
         self.trails = True  # each car's last minute drawn behind its marker on the map (Settings)
         self.map_names = "full"  # how racers are named on the map, a key of widgets.MAP_NAMES (Settings)
-        self.course = None  # the race's checkpoints, see capture/checkpoints.py, or None while not known
-        self.timer = None   # sectors.Timer of the race while its data comes, or None
-        self.timer_for = None  # (checkpoint set id, start) the timer is of
+        self.timing = sectors.RaceTiming()  # the race's sector times, as the recorder keeps them too
         self.dirty = True
 
         v = QVBoxLayout(self)
@@ -61,11 +59,11 @@ class MultiplayerPage(QWidget):
         self.plates = {}  # entrant's name -> their car's number plate
         left = QVBoxLayout()
         left.setSpacing(theme.GAP)
-        left.addWidget(self.racers)
         left.addWidget(self.drivers)
+        left.addWidget(self.racers)
         self.sectors = SectorsPanel()
-        left.addWidget(self.sectors)
-        left.addStretch()
+        self.sectors.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)  # down to the bottom, its rows on top
+        left.addWidget(self.sectors, 1)
         h.addLayout(left)
         self.c_map = charts.MapChart()
         self.maps = MapPicker(all_maps())  # the game map under the tracks: the world's, see set_world
@@ -80,8 +78,7 @@ class MultiplayerPage(QWidget):
 
     def on_own(self, d):
         self.me.append((d["w"], d["x"], d["y"], d["speed_kmh"]))
-        if self.timer:
-            self.timer.feed("me", d["w"], d["x"], d["y"])
+        self.timing.on_own(d["w"], d["x"], d["y"], d["speed_kmh"])
         self.trim(self.me, d["w"])
         self.dirty = True
 
@@ -91,8 +88,7 @@ class MultiplayerPage(QWidget):
             if not hist or hist[-1][0] != c["t"]:  # cars the packet didn't move come back unchanged
                 v = c["speed_kmh"]
                 hist.append((c["t"], c["x"], c["y"], math.nan if v is None else v))
-                if self.timer:
-                    self.timer.feed(num, c["t"], c["x"], c["y"])
+                self.timing.on_rival(num, c["t"], c["x"], c["y"])
                 self.trim(hist, c["t"])
         self.left = {n for n in self.rivals if n not in cars}
         self.dirty = True
@@ -157,38 +153,22 @@ class MultiplayerPage(QWidget):
     def set_standings(self, snapshot):
         """How far along everyone is (progress.Standings.snapshot), from the capture; None out of a race."""
         self.snapshot = snapshot
-        self.time_race()
+        self.timing.update(snapshot)
+        self.dirty = True
         self.show_standings()
 
     def set_checkpoints(self, course):
         """The race's set of checkpoints (capture/checkpoints.py), from the capture; None when none is known."""
-        self.course = course
-        self.time_race()
-
-    def time_race(self):
-        """A new sectors.Timer once a race with known checkpoints gets under way, and the finishes the race server
-        sent, to it; none once the race's data stops coming (the standings gone, as the rest of the page's)."""
-        s = self.snapshot
-        if not s or not self.course:
-            self.timer = self.timer_for = None
-        if self.course and s and s.get("start") is not None:
-            key = (self.course["id"], s["start"])
-            if key != self.timer_for:
-                self.timer_for = key
-                self.timer = sectors.Timer(self.course["checkpoints"], self.course.get("laps"))
-                self.timer.set_start(sectors.launch([(t, v) for t, _, _, v in self.me], s["start"]))
-        if self.timer and s:
-            for r in s["racers"]:
-                if r["finish"] is not None and r["who"] is not None:
-                    self.timer.finished(r["who"], r["finish"])
+        self.timing.set_course(course, self.snapshot)
         self.dirty = True
 
     def show_sectors(self):
         """Each entrant's sector times, in race order."""
-        if not self.timer:
+        timer = self.timing.timer
+        if not timer:
             self.sectors.set_rows([])
             return
-        table = self.timer.table()
+        table = timer.table()
         key_of = {name: num for num, name in self.names.items()}
         rows = []
         entrants = self.racers.order()
@@ -198,12 +178,12 @@ class MultiplayerPage(QWidget):
         for e in entrants:
             me = e.get("me") or (bool(self.racers.me) and e["name"] == self.racers.me)
             t = table.get("me" if me else e.get("key", key_of.get(e["name"])))
-            laps = self.timer.laps
+            laps = timer.laps
             lap = f"L{t['lap']}/{laps}" if t and laps else f"L{t['lap']}" if t else ""
             rows.append(dict(name=e["name"], bot=bool(e.get("bot")), lap=lap,
                              color=theme.ACCENT if me else self.racers.colors.get(e["name"]),
                              sectors=t["sectors"] if t else [None] * sectors.SECTORS,
-                             minis=t["minis"] if t else [None] * len(self.timer.cps)))
+                             minis=t["minis"] if t else [None] * len(timer.cps)))
         self.sectors.set_rows(rows)
 
     def show_standings(self):

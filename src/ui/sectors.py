@@ -118,7 +118,30 @@ class Timer:
             r["lap"] += 1
             if self.laps and r["lap"] > self.laps:
                 r["done"] = True
+                r["done_at"] = at
             self.settle(r)
+
+    def crossed(self, key, lap, j, at):
+        """Racer key passed checkpoint j of lap at time at, as a recorded race says (see record): no positions
+        looked at."""
+        r = self.racers.setdefault(key, dict(prev=None, lap=1, next=0, cross={}, done=False, near={}))
+        r["cross"][(lap, j)] = at
+        r["lap"], r["next"] = lap, j + 1
+        if r["next"] == len(self.cps):
+            r["lap"], r["next"] = lap + 1, 0
+
+    def record(self, shift=0.0):
+        """What the race's sectors were timed on, to be kept with its replay: the start and every racer's checkpoint
+        passes (lap, checkpoint index, time) and when it was done, the times less shift; {key: ...} by racer."""
+        out = {}
+        for k, r in self.racers.items():
+            e = dict(cross=[[lap, j, round(t - shift, 6)] for (lap, j), t in sorted(r["cross"].items(),
+                                                                                  key=lambda kv: kv[1])])
+            if r["done"] and r.get("done_at") is not None:
+                e["done"] = round(r["done_at"] - shift, 6)
+            out[str(k)] = e
+        return dict(start=None if self.start is None else round(self.start - shift, 6), groups=self.groups,
+                    racers=out)
 
     def finished(self, key, finish):
         """Racer key finished the race, finish s after its start (the race server's time, sent as it crosses the line,
@@ -142,6 +165,7 @@ class Timer:
         if self.start is not None and abs(start - self.start) > 5.0:
             return  # an earlier lap's line: the race's finish is still to come
         r["done"] = True
+        r["done_at"] = crossed
         self.starts.append(start)
         self.start = statistics.median(self.starts)
         self.measured = True
@@ -214,6 +238,50 @@ class Timer:
                 strip.append(colour(v, best_mini[i], own_mini[i]) if v is not None else None)
             out[k] = dict(lap=lap, sectors=row, minis=strip)
         return out
+
+
+class RaceTiming:
+    """A race's Timer, kept from what the capture sends as it comes: the race's checkpoints, its standings and
+    everyone's positions. A new one once a race with known checkpoints gets under way, given the finishes the race
+    server sends; none once the race's data stops coming (the standings gone). The Multiplayer page shows its
+    table; the recorder keeps its record with the race's replay (replays/recorder.py), so both time it alike."""
+    KEEP = 60.0  # s of the player's own speeds kept, to tell when its car got under way (launch)
+
+    def __init__(self):
+        self.course = None   # the race's checkpoints (capture/checkpoints.py), or None while not known
+        self.timer = None    # Timer of the race while its data comes, or None
+        self.timer_for = None  # (checkpoint set id, start) the timer is of
+        self.own = []        # (t, km/h) of the player's car over the last KEEP s
+
+    def set_course(self, course, snapshot):
+        self.course = course
+        self.update(snapshot)
+
+    def on_own(self, t, x, y, kmh):
+        self.own.append((t, kmh))
+        while self.own and t - self.own[0][0] > self.KEEP:
+            self.own.pop(0)
+        if self.timer:
+            self.timer.feed("me", t, x, y)
+
+    def on_rival(self, key, t, x, y):
+        if self.timer:
+            self.timer.feed(key, t, x, y)
+
+    def update(self, s):
+        """The standings (progress.Standings.snapshot) as last sent, or None out of a race."""
+        if not s or not self.course:
+            self.timer = self.timer_for = None
+        if self.course and s and s.get("start") is not None:
+            key = (self.course["id"], s["start"])
+            if key != self.timer_for:
+                self.timer_for = key
+                self.timer = Timer(self.course["checkpoints"], self.course.get("laps"))
+                self.timer.set_start(launch(self.own, s["start"]))
+        if self.timer and s:
+            for r in s["racers"]:
+                if r["finish"] is not None and r["who"] is not None:
+                    self.timer.finished(r["who"], r["finish"])
 
 
 def launch(own, under_way):

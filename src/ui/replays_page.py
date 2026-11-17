@@ -1,6 +1,7 @@
 """The Replays page: recorded online races, each on a map and a speed chart with a timeline to scrub, and
 everyone's name, car, points, speed and place in the race at the timeline's position, where each car can be hidden;
 and the race's result: everyone's time at the finish."""
+import bisect
 import datetime
 import html
 import os
@@ -14,12 +15,13 @@ from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout,
                                QWidget)
 
-from capture import progress
-from ui import charts, standings, theme, units
+from capture import checkpoints, progress
+from replays.store import own_track
+from ui import charts, sectors, standings, theme, units
 from ui.multiplayer_page import WINDOW, rival_color, segments
 from ui.tracks import track_name
 from ui.vehicles import car_name
-from ui.widgets import Button, RowList, card, label, map_name, panel, shown_name
+from ui.widgets import Button, RowList, SectorsPanel, card, label, map_name, panel, shown_name
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -158,21 +160,7 @@ class ReplaysPage(QWidget):
         self.del_btn.clicked.connect(self.delete)
         btns.addWidget(self.del_btn, 1)
         ll.addLayout(btns)
-        left = QVBoxLayout()
-        left.setSpacing(theme.GAP)
-        left.addWidget(lp, 1)
-        # the open race's result: everyone's time at the finish (replays from 2026-11-10 on)
-        self.result_panel, rl = panel()
-        self.result_panel.setFixedWidth(300)
-        rl.addWidget(label("Result", "sectionTitle"))
-        self.result_grid = QGridLayout()
-        self.result_grid.setHorizontalSpacing(theme.GAP)
-        self.result_grid.setVerticalSpacing(4)
-        self.result_grid.setColumnStretch(1, 1)
-        rl.addLayout(self.result_grid)
-        self.result_panel.hide()
-        left.addWidget(self.result_panel)
-        h.addLayout(left)
+        h.addWidget(lp)
 
         right = QVBoxLayout()
         right.setSpacing(theme.GAP)
@@ -238,6 +226,31 @@ class ReplaysPage(QWidget):
         tl.addWidget(self.time)
         right.addWidget(tp)
         h.addLayout(right, 1)
+
+        # on the right: the open race's result, everyone's time at the finish (replays from 2026-11-10 on), and the
+        # sectors at the timeline's position, timed from the recorded positions (see time_sectors)
+        side = QVBoxLayout()
+        side.setSpacing(theme.GAP)
+        self.result_panel, rl = panel()
+        self.result_panel.setFixedWidth(300)
+        self.result_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+        rl.addWidget(label("Result", "sectionTitle"))
+        self.result_grid = QGridLayout()
+        self.result_grid.setHorizontalSpacing(theme.GAP)
+        self.result_grid.setVerticalSpacing(4)
+        self.result_grid.setColumnStretch(1, 1)
+        rl.addLayout(self.result_grid)
+        self.result_panel.hide()
+        side.addWidget(self.result_panel)
+        self.sectors = SectorsPanel()
+        self.sectors.hide()
+        side.addWidget(self.sectors)
+        side.addStretch()
+        self.sector_times = []  # [t] of the open replay's sector tables, each the table from then on
+        self.sector_tables = []  # their tables (sectors.Timer.table)
+        self.sector_laps = None  # the open race's laps, or None if not known
+        self.sector_minis = 0  # its mini-sectors to a lap
+        h.addLayout(side)
         self.refresh()
 
     # ----- the list -----
@@ -308,8 +321,99 @@ class ReplaysPage(QWidget):
                         self.cars.append((who, rival_color(int(num)), a))
                 self.read_progress(r.get("progress"), names)
                 self.lobby = {e["name"]: e["points"] for e in r.get("lobby") or []}
+        self.time_sectors(r if it else None)
         self.show_result()
         self.draw()
+
+    def time_sectors(self, r):
+        """The open race's sectors (ui/sectors.py), timed as the Multiplayer page times them live, from the recorded
+        positions: on the race track's checkpoints (of the set its cars passed most of, where a track has a set each
+        way round), from when the race got under way (the leader's share of it first past progress.Standings.GOING).
+        Kept as each table from the time it changed (self.sector_times, self.sector_tables); none for a replay
+        whose track, checkpoints or start aren't known."""
+        self.sector_times, self.sector_tables, self.sector_laps = [], [], None
+        if not r or not self.cars:
+            return
+        if r.get("sectors"):
+            self.recorded_sectors(r["sectors"], r.get("names") or {})
+            return
+        if not r.get("progress"):
+            return
+        track = r.get("track") or own_track(r.get("level"))
+        courses = [s for s in checkpoints.sets().values() if track and s.get("track") == track]
+        going = [row[0] for racer in r["progress"].get("racers") or [] for row in racer.get("rows") or []
+                 if row[1] > progress.Standings.GOING]
+        if not courses or not going:
+            return
+        under_way = min(going)
+        events = [(row[0], 0, n, row[1], row[2]) for n, _, a in self.cars for row in a if not np.isnan(row[1])]
+        events += [(under_way + done, 1, n, done, None) for n, (_, done) in self.finishes.items()]
+        events.sort(key=lambda e: (e[0], e[1]))
+        own = next((a for n, _, a in self.cars if n == "You"), None)
+        best = None
+        for course in courses:
+            timer = sectors.Timer(course["checkpoints"], course.get("laps"))
+            timer.set_start(sectors.launch([(row[0], row[4]) for row in own], under_way) if own is not None
+                            else under_way)
+            times, tables, seen = [], [], None
+            for t, kind, n, a, b in events:
+                if kind:
+                    timer.finished(n, a)
+                else:
+                    timer.feed(n, t, a, b)
+                state = (sum(len(x["cross"]) for x in timer.racers.values()),
+                         sum(bool(x["done"]) for x in timer.racers.values()), timer.start)
+                if state != seen:  # a checkpoint passed, a racer done, or the start measured: a new table
+                    seen = state
+                    times.append(t)
+                    tables.append(timer.table())
+            if best is None or seen[0] > best[0]:
+                best = (seen[0], times, tables, timer.laps, len(timer.cps))
+        _, self.sector_times, self.sector_tables, self.sector_laps, self.sector_minis = best
+
+    def recorded_sectors(self, rec, names):
+        """The sector tables of a replay that kept its sectors as they were timed live (replays/store.py): its
+        checkpoint passes put back in order, each car by its name as in self.cars."""
+        course = rec["course"]
+        timer = sectors.Timer(course["checkpoints"], course.get("laps"))
+        timer.groups = [list(g) for g in rec["groups"]]
+        timer.start = rec["start"]
+        car = lambda k: "You" if k == "me" else names.get(k) or f"Rival {k}"
+        events = [(t, 0, car(k), lap, j) for k, e in rec["racers"].items() for lap, j, t in e["cross"]]
+        events += [(e["done"], 1, car(k), None, None) for k, e in rec["racers"].items() if e.get("done") is not None]
+        events.sort(key=lambda e: (e[0], e[1]))
+        if rec["start"] is not None:  # from the start, the racers with no times yet
+            self.sector_times.append(rec["start"])
+            self.sector_tables.append({})
+        for t, kind, n, lap, j in events:
+            if kind:
+                timer.racers[n]["done"] = True
+            else:
+                timer.crossed(n, lap, j, t)
+            self.sector_times.append(t)
+            self.sector_tables.append(timer.table())
+        self.sector_laps = course.get("laps")
+        self.sector_minis = len(course["checkpoints"])
+
+    def show_sectors(self, places):
+        """Each car's sectors at the timeline's position, in race order (places: {car name: place})."""
+        if not self.sector_tables:
+            self.sectors.hide()
+            return
+        k = bisect.bisect_right(self.sector_times, self.pos) - 1
+        table = self.sector_tables[k] if k >= 0 else {}
+        order = sorted(range(len(self.cars)), key=lambda i: (places.get(self.cars[i][0], 99), i))
+        rows = []
+        for i in order:
+            n, c, _ = self.cars[i]
+            t = table.get(n)
+            laps = self.sector_laps
+            lap = f"L{t['lap']}/{laps}" if t and laps else f"L{t['lap']}" if t else ""
+            rows.append(dict(name=(self.driver() or "You") if n == "You" else n, bot=n in self.bots, lap=lap, color=c,
+                             sectors=t["sectors"] if t else [None] * sectors.SECTORS,
+                             minis=t["minis"] if t else [None] * self.sector_minis))
+        self.sectors.set_rows(rows)
+        self.sectors.show()
 
     def read_progress(self, progress, names):
         """The replay's racers along the track, each given the car it was (see self.progress)."""
@@ -342,7 +446,7 @@ class ReplaysPage(QWidget):
         self.finishes = {car: (place, done) for place, car, done in self.results if car}
 
     def standings_at(self, t):
-        """{car name: what its chip says of its place at t}."""
+        """{car name: what its chip says of its place at t}, and {car name: its place at t}."""
         racers = []
         for car, a in self.progress:
             if a[0, 0] <= t:  # after its last change it stays where it was
@@ -364,7 +468,7 @@ class ReplaysPage(QWidget):
                     out[r["car"]] = f"P{r['place']}  ·  Finished in {race_time(self.finishes[r['car']][1])}"
                 else:
                     out[r["car"]] = "  ·  ".join(standings.lines(r, mine, self.length))
-        return out
+        return out, {r["car"]: r["place"] for r in racers if r["car"]}
 
     def show_result(self):
         """The open race's result in its panel: hidden for a replay that has none."""
@@ -550,7 +654,8 @@ class ReplaysPage(QWidget):
             self.slider.blockSignals(False)
         # as on the Multiplayer page: each car trails its last minute
         tracks, markers = [], []
-        places = self.standings_at(self.pos) if self.progress else {}
+        places, order = self.standings_at(self.pos) if self.progress else ({}, {})
+        self.show_sectors(order)
         for (n, c, a), chip in zip(self.cars, self.chips):
             here = a[0, 0] <= self.pos <= a[-1, 0]  # a car that hasn't joined yet or has left shows no dot
             now = np.array([[self.pos] + [np.interp(self.pos, a[:, 0], a[:, k]) for k in range(1, a.shape[1])]])
