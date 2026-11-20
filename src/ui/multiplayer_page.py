@@ -178,9 +178,7 @@ class MultiplayerPage(QWidget):
         for e in entrants:
             me = e.get("me") or (bool(self.racers.me) and e["name"] == self.racers.me)
             t = table.get("me" if me else e.get("key", key_of.get(e["name"])))
-            laps = timer.laps
-            lap = f"L{t['lap']}/{laps}" if t and laps else f"L{t['lap']}" if t else ""
-            rows.append(dict(name=e["name"], bot=bool(e.get("bot")), lap=lap,
+            rows.append(dict(name=e["name"], bot=bool(e.get("bot")),
                              color=theme.ACCENT if me else self.racers.colors.get(e["name"]),
                              sectors=t["sectors"] if t else [None] * sectors.SECTORS,
                              minis=t["minis"] if t else [None] * len(timer.cps)))
