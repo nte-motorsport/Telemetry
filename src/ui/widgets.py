@@ -4,7 +4,7 @@ import itertools
 import math
 
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListView,
                                QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStyledItemDelegate,
                                QVBoxLayout, QWidget)
@@ -12,12 +12,43 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QSizePolicy, QHBo
 from ui import theme
 
 
-def label(text="", role=None, wrap=False):
-    w = QLabel(text)
+class SteadyLabel(QLabel):
+    """A label as tall whatever its text. The app's font (Momo Trust Display) has neither Cyrillic nor the racers'
+    colour dot (U+25CF): those come from Segoe UI glyph by glyph, whose line is a pixel taller at 12 px (17 against
+    16), so a row of names would grow and shrink as names, dots and dashes come and go. This one is always as tall
+    as the taller of the two."""
+
+    def tall(self, size):
+        fallback = QFont(self.font())
+        fallback.setFamilies(["Segoe UI"])
+        extra = max(QFontMetrics(fallback).height() - QFontMetrics(self.font()).height(), 0)
+        plain = QLabel(self)  # the height the label's own font gives, with its margins: a text with no fallback
+        plain.setFont(self.font())
+        plain.setText("M")
+        size.setHeight(max(size.height(), plain.sizeHint().height() + extra))
+        plain.deleteLater()
+        return size
+
+    def sizeHint(self):
+        return self.tall(super().sizeHint())
+
+    def minimumSizeHint(self):
+        return self.tall(super().minimumSizeHint())
+
+
+def label(text="", role=None, wrap=False, steady=False):
+    """steady: as tall whatever the text (SteadyLabel), for the rows of racers' names."""
+    w = SteadyLabel(text) if steady else QLabel(text)
     if role:
         w.setProperty("role", role)
     w.setWordWrap(wrap)
     return w
+
+
+def set_text(w, text):
+    """Write text in label w only when it says something else: writing it anew lays it out and draws it again."""
+    if w.text() != text:
+        w.setText(text)
 
 
 def panel(layout_cls=QVBoxLayout, margins=theme.GAP, spacing=theme.GAP):
@@ -255,7 +286,8 @@ class TimingPanel(QFrame):
         self.entrants = list(entrants)
         while len(self.rows) < max(len(self.entrants), self.PLACEHOLDERS):
             row = len(self.rows)
-            cells = (label("", "muted"), label(), label("", "muted"), label("", "muted"))
+            cells = (label("", "muted", steady=True), label(steady=True), label("", "muted", steady=True),
+                     label("", "muted", steady=True))
             cells[1].setTextFormat(Qt.RichText)
             cells[1].setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # a long name is cut, not the times
             cells[2].setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -288,22 +320,22 @@ class TimingPanel(QFrame):
                 place = placed[k]
                 # before the race, among entrants not placed yet, a dash's place is no more known than theirs
                 known = taken or not self.entrants
-                cells[0].setText(f"P{place}" if known else "—")
-                cells[1].setText(f'<span style="color:{theme.MUTED}">—</span>')
-                cells[2].setText("Interval" if known and place == 1 else "—")
-                cells[3].setText("Leader" if known and place == 1 else "—")
+                set_text(cells[0], f"P{place}" if known else "—")
+                set_text(cells[1], f'<span style="color:{theme.MUTED}">—</span>')
+                set_text(cells[2], "Interval" if known and place == 1 else "—")
+                set_text(cells[3], "Leader" if known and place == 1 else "—")
                 continue
             e = placed[k]
             st = self.standing(e["name"])
             mine = self.me and e["name"] == self.me
             color = theme.ACCENT if mine else self.colors.get(e["name"])
             dot = f'<span style="color:{color}">&#9679;</span>&nbsp;' if color else ""
-            cells[0].setText(f"P{st[0]}" if st else "—")
-            cells[1].setText(dot + html.escape(shown_name(e["name"], e.get("bot"))))
-            cells[2].setText("" if not st else "Interval" if st[0] == 1
+            set_text(cells[0], f"P{st[0]}" if st else "—")
+            set_text(cells[1], dot + html.escape(shown_name(e["name"], e.get("bot"))))
+            set_text(cells[2], "" if not st else "Interval" if st[0] == 1
                              else f"+{st[1]:.{3 if st[2] else 1}f}" if st[1] is not None else "")
             gap = st[3] if st and len(st) > 3 else None
-            cells[3].setText("" if not st else "Leader" if st[0] == 1
+            set_text(cells[3], "" if not st else "Leader" if st[0] == 1
                              else f"+{gap:.{3 if st[2] else 1}f}" if gap is not None else "")
 
 
@@ -330,7 +362,31 @@ class DriversPanel(QFrame):
         v.addLayout(self.list)
         self.shown = None  # what the entries say, to write them anew only when it changes
         self.logos = {}  # (logo file, opacity) -> its pixmap, scaled
+        self.rows = []  # [box, icon, [head, car, rank labels], its logo's pixmap] made so far: kept and written over, not made anew,
+                        # so a change doesn't blink the panel
         self.set_racers([])
+
+    def add_row(self):
+        box = QFrame()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(theme.GAP)
+        icon = QLabel()  # empty only while no logo is there at all: the names stay in line
+        icon.setFixedSize(self.LOGO, self.LOGO)
+        icon.setAlignment(Qt.AlignCenter)
+        row.addWidget(icon)
+        b = QVBoxLayout()
+        b.setContentsMargins(0, 0, 0, 0)
+        b.setSpacing(2)
+        row.addLayout(b, 1)
+        texts = []
+        for role in ("listTitle", "muted", "muted"):
+            w = label("", role, steady=True)
+            w.setTextFormat(Qt.RichText)
+            b.addWidget(w)
+            texts.append(w)
+        self.list.addWidget(box)
+        self.rows.append([box, icon, texts, None])
 
     def set_racers(self, racers):
         """racers: [dict(name, bot, color or None, car: its name, rank: dict(name, logo: its file or None) or None,
@@ -338,33 +394,26 @@ class DriversPanel(QFrame):
         if racers == self.shown:
             return
         self.shown = racers
-        while self.list.count():
-            w = self.list.takeAt(0).widget()
-            if w:  # gone at once: deleteLater alone leaves it drawn where it was until the event loop runs
-                w.hide()
-                w.setParent(None)
-                w.deleteLater()
-        for r in racers + [None] * (self.PLACEHOLDERS - len(racers)):  # dashes for those not known yet
-            box = QFrame()
-            row = QHBoxLayout(box)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(theme.GAP)
-            icon = QLabel()  # empty only while no logo is there at all: the names stay in line
-            icon.setFixedSize(self.LOGO, self.LOGO)
-            icon.setAlignment(Qt.AlignCenter)
+        entries = racers + [None] * (self.PLACEHOLDERS - len(racers))  # dashes for those not known yet
+        while len(self.rows) < len(entries):
+            self.add_row()
+        for k, (box, icon, texts, had) in enumerate(self.rows):
+            box.setVisible(k < len(entries))
+            if k >= len(entries):
+                continue
+            r = entries[k]
             if r and r["rank"] and r["rank"]["logo"]:
                 pix = self.logo(r["rank"]["logo"])
             else:  # a bot's, or a rank not known yet: the first rank's, faded
                 from ui import ranks
                 first = ranks.first_logo()
                 pix = self.logo(first, self.UNKNOWN_OPACITY) if first else None
-            if pix:
-                icon.setPixmap(pix)
-            row.addWidget(icon)
-            b = QVBoxLayout()
-            b.setContentsMargins(0, 0, 0, 0)
-            b.setSpacing(2)
-            row.addLayout(b, 1)
+            if pix is not had:  # (the pixmaps are kept: the same one is the same logo)
+                self.rows[k][3] = pix
+                if pix:
+                    icon.setPixmap(pix)
+                else:
+                    icon.clear()
             if r is None:
                 head, car, rank = "—", "—", "—"
             else:
@@ -376,11 +425,8 @@ class DriversPanel(QFrame):
                 else:
                     rank = " · ".join(([html.escape(r["rank"]["name"])] if r["rank"] else [])
                                       + ([f"{r['points']} pts"] if r["points"] is not None else [])) or "—"
-            for text, role in ((head, "listTitle"), (car, "muted"), (rank, "muted")):
-                w = label(text, role)
-                w.setTextFormat(Qt.RichText)
-                b.addWidget(w)
-            self.list.addWidget(box)
+            for w, text in zip(texts, (head, car, rank)):
+                set_text(w, text)
 
     def logo(self, path, opacity=1.0):
         """The pixmap of a logo file, scaled to fit and at opacity, or None if it won't load."""
@@ -451,19 +497,19 @@ class SectorsPanel(QFrame):
         self.grid = QGridLayout()
         self.grid.setHorizontalSpacing(theme.GAP)
         self.grid.setVerticalSpacing(3)
-        for col, text in enumerate(("S1", "S2", "S3"), 2):  # after the name's and the lap's columns
+        for col, text in enumerate(("S1", "S2", "S3"), 1):  # after the name's column
             self.grid.setColumnStretch(col, 1)
             h = label(text, "muted")
             h.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.grid.addWidget(h, 0, col)
         v.addLayout(self.grid)
         v.addStretch()  # the rows at the top of a panel made taller than they are
-        self.rows = []  # (name, lap, [3 sector labels], strip)
+        self.rows = []  # (name, [3 sector labels], strip)
         self.shown = None
         self.set_rows([])
 
     def set_rows(self, rows):
-        """rows: [dict(name, bot, color or None, lap: e.g. "L2" or "", sectors: [(seconds, colour) or None] * 3,
+        """rows: [dict(name, bot, color or None, sectors: [(seconds, colour) or None] * 3,
         minis: [colour or None])], in order; [] for placeholders."""
         if rows == self.shown:
             return
@@ -471,41 +517,37 @@ class SectorsPanel(QFrame):
         rows = list(rows) + [None] * (self.PLACEHOLDERS - len(rows))
         while len(self.rows) < len(rows):
             k = len(self.rows)
-            name = label()
+            name = label(steady=True)
             name.setTextFormat(Qt.RichText)
-            lap = label("", "muted")
-            secs = [label() for _ in range(3)]
+            secs = [label(steady=True) for _ in range(3)]
             for w in secs:
                 w.setTextFormat(Qt.RichText)
                 w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             strip = MiniStrip()
-            # each racer in two rows: name, lap and the sectors' times; the mini-sectors below
+            # each racer in two rows: name and the sectors' times; the mini-sectors below
             top = 1 + 2 * k
             self.grid.addWidget(name, top, 0)
-            self.grid.addWidget(lap, top, 1)
-            for col, w in enumerate(secs, 2):
+            for col, w in enumerate(secs, 1):
                 self.grid.addWidget(w, top, col)
-            self.grid.addWidget(strip, top + 1, 0, 1, 5)
+            self.grid.addWidget(strip, top + 1, 0, 1, 4)
             if k:
                 self.grid.setRowMinimumHeight(top, QFontMetrics(name.font()).height() + 6)  # a gap before the next
-            self.rows.append((name, lap, secs, strip))
-        for k, (name, lap, secs, strip) in enumerate(self.rows):
+            self.rows.append((name, secs, strip))
+        for k, (name, secs, strip) in enumerate(self.rows):
             r = rows[k] if k < len(rows) else None
             visible = k < len(rows)
-            for w in (name, lap, strip, *secs):
+            for w in (name, strip, *secs):
                 w.setVisible(visible)
             if r is None:
-                name.setText("—")
-                lap.setText("")
+                set_text(name, "—")
                 for w in secs:
-                    w.setText(f'<span style="color:{theme.MUTED}">—</span>')
+                    set_text(w, f'<span style="color:{theme.MUTED}">—</span>')
                 strip.set_colors([None] * (3 * self.PLACEHOLDER_MINIS))
                 continue
             dot = f'<span style="color:{r["color"]}">&#9679;</span>&nbsp;' if r["color"] else ""
-            name.setText(dot + html.escape(map_name(r["name"], r["bot"], "short")))
-            lap.setText(r["lap"])
+            set_text(name, dot + html.escape(map_name(r["name"], r["bot"], "short")))
             for w, sec in zip(secs, r["sectors"]):
-                w.setText(f'<span style="color:{sec[1]}">{sec[0]:.3f}</span>' if sec
+                set_text(w, f'<span style="color:{sec[1]}">{sec[0]:.3f}</span>' if sec
                           else f'<span style="color:{theme.MUTED}">—</span>')
             strip.set_colors(r["minis"])
 
