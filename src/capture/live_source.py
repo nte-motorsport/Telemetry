@@ -81,6 +81,7 @@ class LiveSource(QThread):
         self.tracker = Tracker()
         self.opponents = opponents.Opponents()
         self.progress = progress.Standings()
+        self.header = opponents.Header()  # the rivals' records' header, as the game sends it now
         self.standings_at = -math.inf  # when they were last sent
         self.flow = None    # (client port, server port) of the game
         self.seen = -math.inf  # when it last carried a fix
@@ -162,7 +163,9 @@ class LiveSource(QThread):
         if not me:
             return
         t = time.monotonic() if t is None else t
-        recs = [r for r in opponents.decode(payload) if math.dist(r[2], me[1:4]) < opponents.NEAR]
+        found = [r for r in opponents.scan(payload) if math.dist(r[3], me[1:4]) < opponents.NEAR]
+        self.header.update(found)
+        recs = [r[1:] for r in found if self.header.takes(r[0])]
         if recs:
             cars = self.opponents.update(t, recs, me[1:4])
             self.progress.rivals(t, cars)

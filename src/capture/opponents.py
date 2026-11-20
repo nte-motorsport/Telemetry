@@ -30,25 +30,65 @@ from capture import bits
 # between 2074 records; the server's own long silences about a car (a minute and more) they do not.
 SIGS = (2074, 2091, 2096)
 NEAR = 3000.0  # m: a position this far from the player is not a car in the same race
-HEADER = 0x3A24  # pos-40 .. pos-9 of every real record (in all 15 captures of 2026-11-04/05); chance matches of
-                 # the signature carry noise there
+HEADER = 0x3A25  # pos-40 .. pos-9 of every real record, as the game has it since its update of 2026-11-18/20
+                 # (0x3A24 before it, in all the captures of 2026-11-04/17); chance matches of the signature carry
+                 # noise there. A game update may change it again: Header learns it from the records
+KNOWN = (0x3A24, HEADER)  # the headers seen so far, taken until Header has learned which one it is
 AI = 1 << 2      # in the flags byte
 
 
-def decode(payload):
+def decode(payload, header=HEADER):
     """[(car id, server time in s, (x, y, z) in metres, driven by the game)] for every record in one server
-    packet that may be a car."""
+    packet that may be a car: of those scan finds, the ones with header."""
+    return [r[1:] for r in scan(payload) if r[0] == header]
+
+
+def scan(payload):
+    """[(header, car id, server time in s, (x, y, z) in metres, driven by the game)] for every place in one server
+    packet with a record's signature and a position that may be a car's, whatever its header."""
     n = int.from_bytes(payload, "little")
     out = []
     for o in (s + 200 for s in bits.find(payload, SIGS, 13, 0, len(payload) * 8 - 296)):
-        if (n >> (o - 40)) & 0xFFFFFFFF != HEADER:
-            continue
         p = tuple(struct.unpack("<f", struct.pack("<I", (n >> (o + 32 * i)) & 0xFFFFFFFF))[0] / 100
                   for i in range(3))
         if all(math.isfinite(c) and abs(c) < 1e5 for c in p) and any(abs(c) > 0.01 for c in p):
-            out.append(((n >> (o - 187)) & 0xFFF, ((n >> (o - 72)) & 0xFFFFFFFF) / 1000, p,
-                        bool((n >> (o - 8)) & AI)))
+            out.append(((n >> (o - 40)) & 0xFFFFFFFF, (n >> (o - 187)) & 0xFFF, ((n >> (o - 72)) & 0xFFFFFFFF) / 1000,
+                        p, bool((n >> (o - 8)) & AI)))
     return out
+
+
+class Header:
+    """The records' header as the game sends it now: HEADER, until another one is plainly the records' (a game
+    update changed it: 0x3A24 to 0x3A25, 2026-11-20). Of the places with a record's signature and a position that
+    may be a car's, the real records are 90-96% (2026-11-17 and 20, a race each), all under one header; any other
+    header was 5% of them at most (0x45F70614 in one race, one car id). So the header most of them carry, once
+    LEARN of them have been seen, near the player, and it holds more than half of them."""
+    LEARN = 200  # records seen before the header is taken from them
+    KEEP = 2000  # the latest so many are counted
+
+    def __init__(self):
+        self.value = None  # the header learned, None while any of KNOWN is taken
+        self.seen = deque()  # headers of the latest records
+        self.counts = {}
+
+    def update(self, recs):
+        """Count the records scan found (those near the player); see takes for the header now."""
+        for r in recs:
+            self.seen.append(r[0])
+            self.counts[r[0]] = self.counts.get(r[0], 0) + 1
+            if len(self.seen) > self.KEEP:
+                old = self.seen.popleft()
+                self.counts[old] -= 1
+                if not self.counts[old]:
+                    del self.counts[old]
+        if len(self.seen) >= self.LEARN:
+            best = max(self.counts, key=self.counts.get)
+            if self.counts[best] * 2 > len(self.seen):
+                self.value = best
+
+    def takes(self, header):
+        """Whether a record with header is a car's."""
+        return header == self.value if self.value is not None else header in KNOWN
 
 
 class Opponents:
