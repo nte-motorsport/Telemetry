@@ -17,10 +17,14 @@ seven online races with recorded traffic (2026-11-04).
 """
 import re
 
+# A car's model: three digits, and a letter after them for some ("Vehicle031b", "Vehicle060c": cars of a game update,
+# 2026-11-20). Taken for three digits alone, a player in one of them was left out of the field, their record not
+# taken for an entrant's, and so no rival named in a race of 2026-11-20 and two of 2026-11-21.
+MODEL = rb"\d{3}[A-Za-z]?"
 # a bot's car may have a number after it, "AIRacer_Vehicle018_09": with it, two bots of three went unnamed in
 # two races (2026-11-05)
-CAR = re.compile(rb"((?:AIRacer_)?[Vv]ehicle_?\d{3}(?:_\d+)?)\x00")
-NOT_NAME = re.compile(r"(?i)(robot\d|vehicle|airacer_|v\d{3}_)")  # the other strings near a bot's name
+CAR = re.compile(rb"((?:AIRacer_)?[Vv]ehicle_?" + MODEL + rb"(?:_\d+)?)\x00")
+NOT_NAME = re.compile(r"(?i)(robot\d|vehicle|airacer_|v\d{3}[a-z]?_)")  # the other strings near a bot's name  # the other strings near a bot's name
 ROBOT = re.compile(r"Robot\d+")  # the string before a bot's name
 GAP = [0, 0xFF00, 1, 0]  # the int16s between the slot and the name
 # The player's own account, as each of the game's servers sends it on connecting (and again now and then), in UE
@@ -38,6 +42,13 @@ TRACK_MARK = b"Track"
 ROLE = b"RoleId\0"
 ROLE_ID, ROLE_NAME = 304, 672  # bits from the length of "RoleId"
 BOT = "AIRacer_"
+
+
+def model(text):
+    """The model a car's or a part's text names, in small letters ("Vehicle031b", "V031b_Engine_01" -> "031b"), or
+    None."""
+    m = re.search(MODEL.decode(), text or "")
+    return m.group().lower() if m else None
 
 
 def ue_string(n, bit, nbits):

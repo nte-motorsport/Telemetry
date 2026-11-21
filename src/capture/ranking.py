@@ -25,12 +25,12 @@ matched while the player already is on its server, and those records may come be
 """
 import re
 
-from capture.roster import ue_string
+from capture.roster import MODEL, ue_string
 
 RANK = re.compile(rb"(RacingRank_\d{1,2}_\d{1,2})\x00")
 RANK_MARK = b"RacingRank_"
 LOBBY = b"FRacingPlayerMatchExtraData\x00"
-CAR = re.compile(r"[Vv]ehicle_?\d{3}")
+CAR = re.compile(r"[Vv]ehicle_?" + MODEL.decode())
 ID_LO, ID_HI = 10 ** 11, 10 ** 14  # a player's account id: 12 digits (2142..., 2182...)
 BACK = 2000   # bits before the marker the record's name is looked for in
 GAPS = (10, 33, 33)  # bits after the name, the outfit, the frame

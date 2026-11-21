@@ -31,6 +31,31 @@ def segments(a, gap=2.0, jump=100.0):
     return [s for s in np.split(a, cut) if len(s) >= 2]
 
 
+def driver_rows(entrants, me, lobby, own_rank, plates, colors):
+    """The rows of a DriversPanel (ui/widgets.py): each entrant in detail, the players, then the bots, each in
+    alphabetical order (they stay put as places change). me: the player's name; lobby: {name: rank points before the
+    race}; own_rank: the player's own (rank row, points) as the server named them, or None; plates: {name: number
+    plate}; colors: {name: colour of their car} (the player's own is the accent)."""
+    out = []
+    for e in sorted(entrants, key=lambda e: (bool(e.get("bot")), e["name"].casefold())):
+        mine = bool(me) and e["name"] == me
+        bot = bool(e.get("bot"))
+        points = None if bot else lobby.get(e["name"])
+        if mine and own_rank:
+            row, points = own_rank
+            rank = ranks.from_row(row)
+        else:
+            rank = ranks.from_points(points) if points is not None else None
+        if rank:
+            rank = dict(name=rank["name"], logo=ranks.logo(rank))
+        car = car_name(e["car"]) if e.get("car") else ""
+        if e["name"] in plates:
+            car = f"{car} ({plates[e['name']]})" if car else f"({plates[e['name']]})"
+        out.append(dict(name=e["name"], bot=bot, car=car, color=theme.ACCENT if mine else colors.get(e["name"]),
+                        rank=rank, points=points))
+    return out
+
+
 class MultiplayerPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -129,26 +154,9 @@ class MultiplayerPage(QWidget):
         self.show_drivers()
 
     def show_drivers(self):
-        """Each entrant in detail: the players, then the bots, each in alphabetical order (they stay put as places
-        change)."""
-        out = []
-        for e in sorted(self.racers.entrants, key=lambda e: (bool(e.get("bot")), e["name"].casefold())):
-            me = bool(self.racers.me) and e["name"] == self.racers.me
-            bot = bool(e.get("bot"))
-            points = None if bot else self.lobby.get(e["name"])
-            if me and self.own_rank:
-                row, points = self.own_rank
-                rank = ranks.from_row(row)
-            else:
-                rank = ranks.from_points(points) if points is not None else None
-            if rank:
-                rank = dict(name=rank["name"], logo=ranks.logo(rank))
-            car = car_name(e["car"]) if e.get("car") else ""
-            if e["name"] in self.plates:
-                car = f"{car} ({self.plates[e['name']]})" if car else f"({self.plates[e['name']]})"
-            out.append(dict(name=e["name"], bot=bot, car=car,
-                            color=theme.ACCENT if me else self.racers.colors.get(e["name"]), rank=rank, points=points))
-        self.drivers.set_racers(out)
+        """Each entrant in detail (driver_rows)."""
+        self.drivers.set_racers(driver_rows(self.racers.entrants, self.racers.me, self.lobby, self.own_rank,
+                                            self.plates, self.racers.colors))
 
     def set_standings(self, snapshot):
         """How far along everyone is (progress.Standings.snapshot), from the capture; None out of a race."""

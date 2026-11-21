@@ -24,6 +24,16 @@ Run it from an administrator terminal, or use the "Relaunch as administrator" bu
 
 Produces `dist\NTE Telemetry.exe`: a single file that asks for administrator rights on start.
 
+Installer (needs the [WiX Toolset](https://wixtoolset.org) v4 or later and its UI extension:
+`wix extension add -g WixToolset.UI.wixext`):
+
+```
+.venv\Scripts\python build_msi.py 1.0.0
+```
+
+Builds the exe, then `dist\NTE Telemetry-1.0.0.msi`: installs it to Program Files with Start menu and desktop
+shortcuts. Give each release a higher version, so installing it replaces the older one.
+
 ## Maps
 
 The game's map can lie under the tracks on the Live, Multiplayer and Replays pages. Maps are plug-ins, not part
