@@ -18,10 +18,9 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMessageBox, QS
 from capture import checkpoints, progress
 from replays.store import own_track
 from ui import charts, sectors, theme, units
-from ui.multiplayer_page import WINDOW, rival_color, segments
+from ui.multiplayer_page import WINDOW, driver_rows, rival_color, segments
 from ui.tracks import track_name
-from ui.vehicles import car_name
-from ui.widgets import Button, RowList, SectorsPanel, card, label, map_name, panel, set_text, shown_name
+from ui.widgets import Button, DriversPanel, RowList, SectorsPanel, card, label, map_name, panel, set_text, shown_name
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -45,9 +44,8 @@ def race_time(s):
 
 
 class CarChip(QFrame):
-    """One car under the charts: its colour, its driver's name and the car (when the replay has the race's
-    entrants), its speed at the timeline's position, and a button that hides it from the map and the speed
-    chart."""
+    """One car under the charts: its colour, its driver's name, its speed at the timeline's position, and a button
+    that hides it from the map and the speed chart (the car and the points are on the Racers panel)."""
 
     def __init__(self, on_toggle):
         super().__init__()
@@ -55,7 +53,6 @@ class CarChip(QFrame):
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)  # side by side from the left, not spread out
         self.name = ""
         self.shown = ""  # the name as written: a bot's between colons (widgets.shown_name)
-        self.about = ""  # what is written after the name: the car
         self.hidden = False
         h = QHBoxLayout(self)
         h.setContentsMargins(theme.GAP, theme.GAP, theme.GAP + 4, theme.GAP)
@@ -74,21 +71,17 @@ class CarChip(QFrame):
         v.addWidget(self.value)
         h.addLayout(v, 1)
 
-    def set_car(self, name, color, about="", shown=None):
+    def set_car(self, name, color, shown=None):
         """Show this car (chips are kept and given the next replay's cars, so switching replays doesn't
         rebuild the row and make it jump). name: the key it is hidden under; shown: as written, if not name."""
         self.name = name
         self.shown = shown or name
-        self.about = about
         self.btn.set_tint(color)
         self.set_hidden(False)
 
     def set_hidden(self, on):
         self.hidden = on
-        sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
-        about = sep + sep.join(html.escape(part) for part in self.about.split(" · ")) if self.about else ""
-        self.title.setText(f'<span style="color:{theme.MUTED if on else theme.TEXT}">{html.escape(self.shown)}</span>'
-                           f'{about}')
+        self.title.setText(f'<span style="color:{theme.MUTED if on else theme.TEXT}">{html.escape(self.shown)}</span>')
         self.btn.set_icon("eye-off" if on else "eye")
         self.btn.setToolTip(f"Show {self.shown}" if on else f"Hide {self.shown}")
         self.setProperty("off", on)
@@ -238,7 +231,14 @@ class ReplaysPage(QWidget):
         self.sectors = SectorsPanel()
         self.sectors.hide()
         side.addWidget(self.sectors)
+        # and everyone in detail, as on the Multiplayer page: from the entrants, the lobby, the player's rank and the
+        # number plates the replay kept
+        self.drivers = DriversPanel()
+        self.drivers.hide()
+        side.addWidget(self.drivers)
         side.addStretch()
+        self.own_rank = None  # the player's (rank row, points) before the open race, when the replay has them
+        self.plates = {}  # entrant's name -> number plate, of the open race
         self.sector_times = []  # [t] of the open replay's sector tables, each the table from then on
         self.sector_tables = []  # their tables (sectors.Timer.table)
         self.sector_minis = 0  # its mini-sectors to a lap
@@ -289,6 +289,7 @@ class ReplaysPage(QWidget):
         self.progress = []
         self.length = None
         self.finishes, self.results, self.lobby = {}, [], {}
+        self.own_rank, self.plates = None, {}
         self.opened = it.data(Qt.UserRole) if it else None
         if it:
             try:
@@ -314,8 +315,12 @@ class ReplaysPage(QWidget):
                         self.cars.append((who, rival_color(int(num)), a))
                 self.read_progress(r.get("progress"), names)
                 self.lobby = {e["name"]: e["points"] for e in r.get("lobby") or []}
+                before = (r.get("rank") or {}).get("before")
+                self.own_rank = tuple(before) if before else None
+                self.plates = r.get("plates") or {}
         self.time_sectors(r if it else None)
         self.show_result()
+        self.show_drivers()
         self.draw()
 
     def time_sectors(self, r):
@@ -508,20 +513,24 @@ class ReplaysPage(QWidget):
         self.me = name or ""
         if self.cars:
             for chip, (n, c, _) in zip(self.chips, self.cars):
-                chip.set_car(n, c, self.about(n), "You" if n == "You" else self.label(n))
+                chip.set_car(n, c, "You" if n == "You" else self.label(n))
                 chip.set_hidden(n in self.hidden)
             self.seek(self.pos)
             self.show_result()
+            self.show_drivers()
 
-    def about(self, name):
-        """What the open replay's entrants say of the car under name: its model, and the driver's points before the
-        race when the replay has its lobby."""
-        who = self.driver() if name == "You" else name
-        e = next((e for e in self.field if e["name"] == who), None)
-        parts = [car_name(e["car"])] if e else []
-        if who in self.lobby:
-            parts.append(f"{self.lobby[who]} pts")
-        return " · ".join(parts)
+    def show_drivers(self):
+        """The open race's entrants in detail, as on the Multiplayer page; a car hidden is left out here too. None for
+        a replay without its entrants (before 2026-11-04)."""
+        if not self.field:
+            self.drivers.hide()
+            return
+        me = self.driver()
+        car_of = lambda name: "You" if me and name == me else name  # an entrant's car, as in self.cars
+        colors = {e["name"]: c for e in self.field for n, c, _ in self.cars if n == car_of(e["name"])}
+        shown = [e for e in self.field if car_of(e["name"]) not in self.hidden]
+        self.drivers.set_racers(driver_rows(shown, me, self.lobby, self.own_rank, self.plates, colors))
+        self.drivers.show()
 
     def label(self, name):
         """The name of the car under name as written on its chip."""
@@ -580,7 +589,7 @@ class ReplaysPage(QWidget):
             self.pool.append(chip)
         self.chips = self.pool[:len(self.cars)]
         for chip, (n, c, _) in zip(self.chips, self.cars):
-            chip.set_car(n, c, self.about(n), "You" if n == "You" else self.label(n))
+            chip.set_car(n, c, "You" if n == "You" else self.label(n))
         for i, chip in enumerate(self.pool):
             chip.setVisible(i < len(self.cars))
         self.no_cars.setVisible(not self.chips)
@@ -626,6 +635,7 @@ class ReplaysPage(QWidget):
         chip.set_hidden(chip.name in self.hidden)
         self.plot()
         self.show_result()
+        self.show_drivers()
         self.seek(self.pos)  # the map and the sectors
 
     def seek(self, t, from_slider=False):

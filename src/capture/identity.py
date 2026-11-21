@@ -31,13 +31,13 @@ server makes the cars, found in 16 online races with recorded traffic (2026-11-0
 """
 import re
 
-from capture.roster import ue_string
+from capture.roster import MODEL, model, ue_string
 
 DRM = b"DataReplicationManager"
 AI_TAG = b"AIRacer_"
-PART = re.compile(r"V\d{3}_")  # a car part: what follows a bot's name when the server makes its car
-PARTS = re.compile(rb"V\d{3}_[A-Za-z]+_\d{2}\x00")  # a car part's text, as its plate follows the last of them
-PART_NAME = re.compile(r"V\d{3}_[A-Za-z]+_\d{2}|Vehicle\d{3}_Skin\d{3}")
+PART = re.compile(r"V" + MODEL.decode() + "_")  # a car part: what follows a bot's name when the server makes its car
+PARTS = re.compile(rb"V" + MODEL + rb"_[A-Za-z]+_\d{2}\x00")  # a car part's text, as its plate follows the last of them
+PART_NAME = re.compile(r"V{0}_[A-Za-z]+_\d{{2}}|Vehicle{0}_Skin\d{{3}}".format(MODEL.decode()))
 PLATE = re.compile(r"[^\s_/.][^_/.]{0,9}")  # any text a player sets ("Желудьь", 2026-11-13), not a part's or a path
 NOT_PLATE = {"None"}
 PLATE_GAP = 112  # bits after a car's last part its plate is looked for in (48 or 88)
@@ -77,7 +77,7 @@ class Identity:
         self.last = None      # the car made last
         self.last_at = None   # when (the time feed was given)
         self.plates = {}      # car id -> its number plate
-        self.garage = {}      # the player's own cars' plates: model number ("026") -> plate
+        self.garage = {}      # the player's own cars' plates: model (roster.model: "026", "031b") -> plate
 
     def feed(self, payload, now=None):
         """Take one packet of the race server, come at time now (s)."""
@@ -99,7 +99,7 @@ class Identity:
             if key is PARTS:
                 plate, gap = self.plate_after(n, bit, nbits)
                 if plate and gap == 0:  # the player's garage
-                    self.garage[ue_string(n, bit, nbits)[1:4]] = plate
+                    self.garage[model(ue_string(n, bit, nbits))] = plate
                 elif plate and self.last is not None and (now is None or self.last_at is None
                                                         or now - self.last_at <= PLATE_WITHIN):
                     self.plates.setdefault(self.last, plate)

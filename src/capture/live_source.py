@@ -5,7 +5,7 @@ from collections import deque
 
 from PySide6.QtCore import QThread, Signal
 
-from capture import checkpoints, opponents, progress, ranking
+from capture import checkpoints, opponents, progress, ranking, roster
 from capture.ranking import Ranking
 from capture.identity import Identity
 from capture.levels import find_level
@@ -282,7 +282,7 @@ class LiveSource(QThread):
         out = {name: ident.plates[by_num[num]] for num, name in named.items()
                if num in by_num and by_num[num] in ident.plates}
         own = next(iter(opp.own_ids)) if len(opp.own_ids) == 1 else None
-        model = next((e["car"][-3:] for e in self.entrants if e["name"] == self.me), None)
+        model = next((roster.model(e["car"]) for e in self.entrants if e["name"] == self.me), None)
         if self.me and model in ident.garage:
             out[self.me] = ident.garage[model]
         elif self.me and own in ident.plates:

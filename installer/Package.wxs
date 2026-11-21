@@ -1,0 +1,39 @@
+<!-- NTE Telemetry MSI: dist\NTE Telemetry.exe into Program Files, with Start menu and desktop shortcuts.
+     Built by build_msi.py, which passes Version and ExePath. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!-- UpgradeCode must never change: it is what lets a newer MSI replace an older one. -->
+  <Package Name="NTE Telemetry" Manufacturer="NTE Motorsport" Version="$(Version)"
+           UpgradeCode="71c8e4f0-2679-4a7c-8fe7-6c7632649cc4" Scope="perMachine" Compressed="yes">
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of NTE Telemetry is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- the id needs the .ico extension: Windows reads the icon file by it, and without one shortcuts show none -->
+    <Icon Id="AppIcon.ico" SourceFile="$(IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(LicenseRtf)" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(BannerBmp)" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(DialogBmp)" />
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="NTE Telemetry" />
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <Component Directory="INSTALLFOLDER">
+        <File Id="AppExe" Source="$(ExePath)" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="NTE Telemetry"
+                    WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" Advertise="yes">
+            <!-- same id the app sets on itself (src/windows.py), so the taskbar groups them -->
+            <ShortcutProperty Key="System.AppUserModel.ID" Value="NTEMotorsport.Telemetry" />
+          </Shortcut>
+          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="NTE Telemetry"
+                    WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" Advertise="yes" />
+        </File>
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

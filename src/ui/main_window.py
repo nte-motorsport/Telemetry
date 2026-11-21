@@ -1,6 +1,6 @@
 """The main window: the site-style navbar, the Live / Multiplayer / Replays / Settings pages and race recording."""
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QCursor, QGuiApplication, QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QStackedWidget, QVBoxLayout
 
 from replays.recorder import RaceRecorder
@@ -24,8 +24,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("NTE Telemetry")
         self.setWindowIcon(QIcon(theme.asset("app.ico")))
-        self.resize(1440, 920)
         self.setMinimumSize(1100, 700)
+        self.place(1440, 920)
 
         root = Backdrop()
         self.setCentralWidget(root)
@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         tracks().changed.connect(lambda: self.replays.refresh())  # track names, the same way (ui/tracks.py)
         tracks().refresh()
         ranks().changed.connect(self.multiplayer.show_drivers)  # rank names and logos, the same way (ui/ranks.py)
+        ranks().changed.connect(self.replays.show_drivers)
         ranks().refresh()
         self.pages = QStackedWidget()
         for p in (self.live, self.multiplayer, self.replays, self.settings):
@@ -212,6 +213,19 @@ class MainWindow(QMainWindow):
     def raw_wanted(self):
         """Raw traffic is kept for races to be recorded with: only while both are on."""
         return self.prefs.option("auto_record") and self.prefs.option("raw_traffic")
+
+    def place(self, w, h):
+        """Centre the window on the screen the cursor is on, shrunk to fit it (Windows would cascade it from the
+        top left). The title bar isn't drawn yet, so allow for it."""
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(w, h)
+            return
+        area = screen.availableGeometry()
+        title = 32
+        w, h = min(w, area.width() - 16), min(h, area.height() - title - 16)
+        self.resize(w, h)
+        self.move(area.x() + (area.width() - w) // 2, area.y() + (area.height() - h - title) // 2)
 
     def closeEvent(self, ev):
         self.live.stop()
