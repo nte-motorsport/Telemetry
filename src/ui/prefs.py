@@ -7,7 +7,7 @@ from PySide6.QtCore import QObject, Signal
 
 # option -> default; network "" = the default-route one; raw_traffic: save each race's raw network traffic too;
 # my_name: the player's name in the game, to mark them among a race's entrants ("" = not known), and my_id their
-# account id ("" = not known): both found in the game's traffic (capture/roster.py, ROLE), or the name set by hand;
+# account id ("" = not known): both found in the game's traffic (capture/roster.py, ROLE), never set by hand;
 # speed_unit: the unit speeds are shown in, a key of ui/units.SPEEDS; map_names: how racers are named on the map,
 # a key of widgets.MAP_NAMES; map_trails: each car's last minute drawn behind its marker on the Multiplayer and Replays
 # maps (off: the markers alone); layout_<page>: how the Multiplayer ("multiplayer") and Replays ("replays") pages

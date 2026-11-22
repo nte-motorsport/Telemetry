@@ -1,10 +1,32 @@
 # Telemetry
 
-NTE Motorsport telemetry app for Neverness to Everness: speed, G-forces, trajectory and altitude.
+NTE Motorsport telemetry app for Neverness to Everness: your car's telemetry while you drive, everyone in an online
+race live, and recorded races to watch again.
 
 The data is decoded from the game's own UDP traffic, read passively from the network. The game process is never
 touched, so the Anti-Cheat Expert driver has nothing to see. No Wireshark or Npcap is needed: the app uses a Windows
 raw socket, which requires administrator rights.
+
+## Pages
+
+- **Live**: your car as you drive: speed, longitudinal and lateral G, yaw rate, slope, altitude, heading, odometer
+  and top speed, and the last minute on charts (speed, G-forces, trajectory, G-G diagram, altitude, yaw rate).
+- **Multiplayer**: an online race as it goes: every car on one map and everyone's speed over the last minute, the
+  racers with their cars and ranks, the timing (places and gaps) and each racer's sector times.
+- **Replays**: online races, recorded on their own from start to finish. Each one on a map and a speed chart with a
+  timeline to play or scrub, everyone's speed at that moment, the result and the sectors.
+- **Settings**:
+  - *Display*: which Live charts are shown and in what order; on Multiplayer and Replays, which side the panels'
+    column is on, which panels are shown and in what order, and the order of the map and speed charts; the unit of
+    speed (km/h, m/s, mph, knots, Mach); how racers are named on the map, and their trails.
+  - *Network*: the network interface the game's traffic is read from.
+  - *Recording*: recording online races, and optionally each race's raw network traffic (a `.pcap.gz` that
+    Wireshark opens; it holds everything the computer sent and received during the race, so don't share it).
+  - *Plugins*: map packs (see [Maps](#maps)).
+  - *Account*: your name in the game and account ID. Not set by hand: the game sends them when it connects, and
+    the app uses them to tell your car from the others'.
+
+Settings, replays and map packs are kept in `%APPDATA%\NTE Telemetry`.
 
 ## Run
 
@@ -53,3 +75,15 @@ Making a pack from the game's map tiles (PNG, numbered left to right, top to bot
    `.venv\Scripts\python tools\align_map.py <folder> "%APPDATA%\NTE Telemetry\replays\<replay>.json.gz"`
    (right drag moves the drive, Ctrl + wheel scales it, S saves).
 3. Build the pack into the maps folder: `.venv\Scripts\python tools\build_map.py <folder>`
+
+## When a game update breaks it
+
+If the app stops reading the game after an update, record the raw traffic of a race to look into what changed:
+
+```
+.venv\Scripts\python tools\record_traffic.py [seconds] [out.pcap.gz]
+```
+
+Run it from an administrator terminal, then race (Ctrl+C stops it early). Without `out` the file goes to
+`%APPDATA%\NTE Telemetry\replays` as `capture_<date>_<time>.pcap.gz`. Like the raw traffic of a race, it holds
+everything the computer's network connection carried meanwhile.

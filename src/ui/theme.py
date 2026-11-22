@@ -141,13 +141,6 @@ QRadioButton::indicator:checked {{
                                 stop:0 {ACCENT}, stop:0.55 {ACCENT}, stop:0.6 #000, stop:1 #000);
 }}
 
-QLineEdit {{
-    min-height: {CONTROL_HEIGHT - 4}px; max-height: {CONTROL_HEIGHT - 4}px; padding: 0 10px;
-    font-size: {FS_MD}px; background: rgba(0, 0, 0, 128); border: 2px solid {ACCENT}; border-radius: {RADIUS}px;
-    selection-background-color: {ACCENT}; selection-color: #000;
-}}
-QLineEdit:hover {{ background: {ACCENT_DARK}; }}
-QLineEdit:focus {{ border-color: {ACCENT_HOVER}; background: {MENU_BG}; }}
 *[role="divider"] {{ background: rgba(255, 255, 255, 20); }}
 
 QTableWidget {{ background: transparent; border: none; font-size: {FS_LG}px; outline: none; }}
