@@ -50,11 +50,18 @@ Installer (needs the [WiX Toolset](https://wixtoolset.org) v4 or later and its U
 `wix extension add -g WixToolset.UI.wixext`):
 
 ```
-.venv\Scripts\python build_msi.py 1.0.0
+.venv\Scripts\python build_msi.py [version]
 ```
 
-Builds the exe, then `dist\NTE Telemetry-1.0.0.msi`: installs it to Program Files with Start menu and desktop
-shortcuts. Give each release a higher version, so installing it replaces the older one.
+Builds the exe, then `dist\NTE Telemetry-<version>.msi`: installs it to Program Files with Start menu and desktop
+shortcuts. The version is the app's own, `VERSION` in `src/version.py`, unless one is given.
+
+## Release
+
+Change `VERSION` in `src/version.py` (to a higher one: an installer replaces only older versions) and push it to
+`main`. The [Release workflow](.github/workflows/release.yml) then builds the installer on GitHub and publishes it as
+release `v<version>`, with notes made from the commits since the last one. A version that already has its release
+is not built again; to retry a failed build, run the workflow by hand from the Actions tab.
 
 ## Maps
 

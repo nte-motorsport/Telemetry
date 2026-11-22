@@ -1,7 +1,8 @@
 """Build dist/NTE Telemetry-<version>.msi: builds the exe (build.py), then packs it with WiX (installer/Package.wxs).
 Needs the WiX Toolset (v4 or later, `wix` on PATH) with the UI extension:  wix extension add -g WixToolset.UI.wixext
-Run with the project venv:  .venv\\Scripts\\python build_msi.py [version]   (version: 1.2.3, default 1.0.0;
-a newer version installed over an older one replaces it)."""
+Run with the project venv:  .venv\\Scripts\\python build_msi.py [version]   (version: 1.2.3, default the app's
+own, src/version.py; a newer version installed over an older one replaces it). On GitHub, .github/workflows/release.yml
+runs it whenever src/version.py gets a version not released yet."""
 import os
 import re
 import subprocess
@@ -10,6 +11,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(HERE, "dist")
 WORK = os.path.join(HERE, "build", "msi")
+
+
+def app_version():
+    """VERSION from src/version.py."""
+    scope = {}
+    with open(os.path.join(HERE, "src", "version.py"), encoding="utf-8") as f:
+        exec(f.read(), scope)
+    return scope["VERSION"]
 
 
 def license_rtf(path, out):
@@ -62,7 +71,7 @@ def ui_bitmaps(work):
 
 
 def main():
-    version = sys.argv[1] if len(sys.argv) > 1 else "1.0.0"
+    version = sys.argv[1] if len(sys.argv) > 1 else app_version()
     if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,5}", version):
         sys.exit(f"version must look like 1.2.3, not {version!r}")
 
