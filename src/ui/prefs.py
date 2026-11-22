@@ -10,9 +10,16 @@ from PySide6.QtCore import QObject, Signal
 # account id ("" = not known): both found in the game's traffic (capture/roster.py, ROLE), or the name set by hand;
 # speed_unit: the unit speeds are shown in, a key of ui/units.SPEEDS; map_names: how racers are named on the map,
 # a key of widgets.MAP_NAMES; map_trails: each car's last minute drawn behind its marker on the Multiplayer and Replays
-# maps (off: the markers alone)
+# maps (off: the markers alone); layout_<page>: how the Multiplayer ("multiplayer") and Replays ("replays") pages
+# are laid out, see LAYOUTS
 OPTIONS = {"auto_record": True, "network": "", "raw_traffic": False, "my_name": "", "my_id": "", "speed_unit": "kmh",
-           "map_names": "full", "map_trails": True}
+           "map_names": "full", "map_trails": True, "layout_multiplayer": {}, "layout_replays": {}}
+
+# page -> its layout as it first is: side, the side of the page its column of panels is on ("left" / "right"; on
+# Replays the list of races goes on the other); panels, the column's panels top to bottom (the pages' PANELS keys);
+# off, those of them turned off; speed_first, the speed chart left of the map
+LAYOUTS = {"multiplayer": dict(side="left", panels=["racers", "timing", "sectors"], off=[], speed_first=False),
+           "replays": dict(side="right", panels=["result", "sectors", "racers"], off=[], speed_first=False)}
 
 
 def data_dir():
@@ -55,6 +62,24 @@ class Prefs(QObject):
     def set_option(self, name, value):
         self.options[name] = value
         self.commit("options")
+
+    def layout(self, page):
+        """A page's layout (LAYOUTS), as saved: what is missing or makes no sense as it first is, panels added in a
+        later version at the end of the column."""
+        first = LAYOUTS[page]
+        saved = self.options["layout_" + page]
+        side = saved.get("side") if saved.get("side") in ("left", "right") else first["side"]
+        panels = saved.get("panels") if isinstance(saved.get("panels"), list) else []
+        panels = list(dict.fromkeys(k for k in panels if k in first["panels"]))
+        panels += [k for k in first["panels"] if k not in panels]
+        off = saved.get("off") if isinstance(saved.get("off"), list) else []
+        off = [k for k in panels if k in off]
+        speed_first = saved.get("speed_first") if isinstance(saved.get("speed_first"), bool) else first["speed_first"]
+        return dict(side=side, panels=panels, off=off, speed_first=speed_first)
+
+    def set_layout(self, page, **changes):
+        """Change some of a page's layout; none: back to as it first is."""
+        self.set_option("layout_" + page, dict(self.layout(page), **changes) if changes else {})
 
     def rows(self, page):
         return self.pages[page]

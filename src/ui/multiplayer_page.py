@@ -5,13 +5,14 @@ import time
 from collections import deque
 
 import numpy as np
-from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from ui import charts, sectors, standings, theme, units
 from ui.world_map import MapPicker, all_maps
 from ui import ranks
 from ui.vehicles import car_name
-from ui.widgets import DriversPanel, SectorsPanel, TimingPanel, card, map_name
+from ui.prefs import LAYOUTS
+from ui.widgets import DriversPanel, SectorsPanel, TimingPanel, arrange, card, column, map_name
 
 WINDOW = 60  # seconds of tracks and speed shown
 MAP_EVERY = 2.0  # s between looks at which game map the tracks are on (while the world isn't known)
@@ -57,6 +58,9 @@ def driver_rows(entrants, me, lobby, own_rank, plates, colors):
 
 
 class MultiplayerPage(QWidget):
+    PANELS = [("racers", "Racers"), ("timing", "Timing"), ("sectors", "Sectors")]  # the column's, as Settings names them
+    SIDES = {"left": "Left", "right": "Right"}  # where the column can be
+
     def __init__(self):
         super().__init__()
         self.me = deque()  # (t, x, y, speed km/h)
@@ -72,32 +76,44 @@ class MultiplayerPage(QWidget):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(theme.GAP)
-        h = QHBoxLayout()
-        h.setSpacing(theme.GAP)
-        v.addLayout(h, 1)
-        # on the left: who is where in the race, and who they are (from the race server, capture/roster.py)
+        self.row = QHBoxLayout()
+        self.row.setSpacing(theme.GAP)
+        v.addLayout(self.row, 1)
+        # a column of panels (on the left at first, see set_layout): who is where in the race, and who they are (from
+        # the race server, capture/roster.py)
         self.racers = TimingPanel()
         self.racers.set_entrants([])
         self.drivers = DriversPanel()
         self.lobby = {}  # name -> rank points before the race, of the players the race was matched with
         self.own_rank = None  # the player's own (rank row, points), as the server names them
         self.plates = {}  # entrant's name -> their car's number plate
-        left = QVBoxLayout()
-        left.setSpacing(theme.GAP)
-        left.addWidget(self.drivers)
-        left.addWidget(self.racers)
         self.sectors = SectorsPanel()
-        self.sectors.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)  # down to the bottom, its rows on top
-        left.addWidget(self.sectors, 1)
-        h.addLayout(left)
+        self.panels = {"racers": self.drivers, "timing": self.racers, "sectors": self.sectors}
+        self.column, self.column_lay = column(self)
         self.c_map = charts.MapChart()
         self.maps = MapPicker(all_maps())  # the game map under the tracks: the world's, see set_world
         self.map_at = -1e9  # when the map was last looked at
         self.c_speed = charts.LineChart(lambda s: f"{s:.0f} s", zero=True)
         self.map_card = card("Map", self.c_map)
         self.speed_card = card("Speed", self.c_speed)
-        h.addWidget(self.map_card, 1)
-        h.addWidget(self.speed_card, 1)
+        self.layout_now = None
+        self.set_layout(LAYOUTS["multiplayer"])
+
+    def set_layout(self, layout):
+        """Where the column of panels is, which are on and their order in it, the last one down to the bottom, and
+        the order of the charts (prefs.LAYOUTS)."""
+        if layout == self.layout_now:
+            return
+        self.layout_now = layout
+        shown = [k for k in layout["panels"] if k not in layout["off"]]
+        arrange(self.column_lay, [self.panels[k] for k in shown], fill=True)
+        chart_cards = [self.speed_card, self.map_card] if layout["speed_first"] else [self.map_card, self.speed_card]
+        items = [self.column] + chart_cards if layout["side"] == "left" else chart_cards + [self.column]
+        arrange(self.row, items, stretch=chart_cards)
+        # shown or hidden once in their places (see column)
+        for k, w in self.panels.items():
+            w.setVisible(k in shown)
+        self.column.setVisible(bool(shown))  # no gap for an empty column
 
     # ----- data -----
 

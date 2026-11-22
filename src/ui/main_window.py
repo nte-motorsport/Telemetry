@@ -76,9 +76,12 @@ class MainWindow(QMainWindow):
         self.replays.set_trails(self.prefs.option("map_trails"))
         self.multiplayer.set_map_names(self.prefs.option("map_names"))
         self.multiplayer.set_trails(self.prefs.option("map_trails"))
+        self.set_layouts()
         self.recorder.saved.connect(lambda path: self.replays.refresh())
 
-        self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)], store)
+        self.settings = SettingsPage(self.prefs, [("live", "Live", LivePage.CHARTS)],
+                                     [("multiplayer", "Multiplayer", MultiplayerPage.PANELS, MultiplayerPage.SIDES),
+                                      ("replays", "Replays", ReplaysPage.PANELS, ReplaysPage.SIDES)])
         self.set_me()
         self.settings.maps_changed.connect(self.replays.pick_map)  # Live and Multiplayer look every few seconds
         # car names from the NTE Motorsport database, fetched anew at each start (ui/vehicles.py)
@@ -184,10 +187,16 @@ class MainWindow(QMainWindow):
             self.replays.set_trails(self.prefs.option("map_trails"))
             self.multiplayer.set_map_names(self.prefs.option("map_names"))
             self.multiplayer.set_trails(self.prefs.option("map_trails"))
+            self.set_layouts()
             if self.prefs.option("network") != self.live.ip:
                 self.live.start(self.prefs.option("network"))
         else:
             self.live.set_charts(self.prefs.shown(key))
+
+    def set_layouts(self):
+        """The Multiplayer and Replays pages laid out as set in Settings."""
+        self.multiplayer.set_layout(self.prefs.layout("multiplayer"))
+        self.replays.set_layout(self.prefs.layout("replays"))
 
     def on_player(self, name, account):
         """The game named the player: kept, so it is known from the start next time (a race joined before the

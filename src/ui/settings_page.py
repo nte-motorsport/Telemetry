@@ -1,43 +1,139 @@
 """The Settings page: a list of sections on the left, as the Replays page's races, and the chosen one beside it.
-Display: which charts the Live page shows and in what order, the unit of speed and how racers are named on the
-map. Network: the interface to capture on. Recording: online races. Plugins: the map packs."""
+Display: which charts the Live page shows and in what order, how the Multiplayer and Replays pages are laid out, the
+unit of speed and how racers are named on the map. Network: the interface to capture on. Recording: online races.
+Plugins: the map packs. Account: the player's name and account ID, as the game sends them.
+
+Every section is laid out the same way: a panel with its title and what it is about, then groups (a panel each:
+a title, maybe a line on it and buttons on its right), made of settings one under another, between thin lines -
+each one's name and what it does on the left, its control on the right, all controls of one width."""
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLineEdit, QMessageBox,
-                               QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout,
+                               QWidget)
 
 from capture.raw_socket import local_ips
 from ui import theme, units, world_map
-from ui.widgets import MAP_NAMES, Button, RowList, Select, label, panel, scroll
+from ui.widgets import MAP_NAMES, Button, RowList, Select, label, notice, panel, scroll
+
+FIELD_WIDTH = 260  # every drop-down list and text field
 
 
-def section_page(title, *intro):
-    """A section's page: its title, the lines under it, and room for the rest (the layout returned)."""
+def section_page(title, intro):
+    """A section's page: its title and the line under it, and room for its groups (the layout returned)."""
     body = QWidget()
     v = QVBoxLayout(body)
     v.setContentsMargins(0, 0, 0, 0)
     v.setSpacing(theme.GAP)
     p, pl = panel()
     pl.addWidget(label(title, "sectionTitle"))
-    for text in intro:
-        pl.addWidget(label(text, "muted", wrap=True))
+    pl.addWidget(label(intro, "muted", wrap=True))
     v.addWidget(p)
-    return body, v, pl
+    return body, v
+
+
+def group(v, title, text=None, buttons=()):
+    """A group of settings, added to page layout v: its title with the buttons on its right, the text under it;
+    the layout its settings go in."""
+    p, pl = panel()
+    head = QHBoxLayout()
+    head.setSpacing(theme.GAP)
+    head.addWidget(label(title, "sectionTitle"))
+    head.addStretch()
+    for b in buttons:
+        head.addWidget(b)
+    pl.addLayout(head)
+    if text:
+        pl.addWidget(label(text, "muted", wrap=True))
+    rows = QVBoxLayout()
+    rows.setContentsMargins(0, 0, 0, 0)
+    rows.setSpacing(theme.GAP)
+    pl.addLayout(rows)
+    v.addWidget(p)
+    return rows
+
+
+def divider():
+    line = QFrame()
+    line.setProperty("role", "divider")
+    line.setFixedHeight(1)
+    return line
+
+
+def setting(rows, name, text, *controls):
+    """One setting at the bottom of a group's rows, under a line if it isn't the first: its name and text on the
+    left, the controls on the right. The left column is returned, for more lines under the text."""
+    w = QWidget()
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(theme.GAP * 2)
+    left = QVBoxLayout()
+    left.setSpacing(4)
+    left.addWidget(label(name))
+    if text:
+        left.addWidget(label(text, "muted", wrap=True))
+    h.addLayout(left, 1)
+    for c in controls:
+        h.addWidget(c, 0, Qt.AlignVCenter)
+    if rows.count():
+        rows.addWidget(divider())
+    rows.addWidget(w)
+    return left
+
+
+def select(items, current, on_change):
+    """A drop-down list of the (key, name) items, current chosen; on_change(key) when another is."""
+    s = Select()
+    s.setFixedWidth(FIELD_WIDTH)
+    for key, name in items:
+        s.addItem(name, key)
+    s.setCurrentIndex(max(s.findData(current), 0))
+    s.activated.connect(lambda _: on_change(s.currentData()))
+    return s
+
+
+def value_label():
+    """A value shown where a setting's control would be, that can't be changed: as wide as the controls, on their
+    right."""
+    w = QLabel()
+    w.setFixedWidth(FIELD_WIDTH)
+    w.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    w.setTextInteractionFlags(Qt.TextSelectableByMouse)  # to copy
+    w.setProperty("role", "listTitle")
+    return w
+
+
+def moved(keys, i, step):
+    """keys with the one at i moved step places along."""
+    keys = list(keys)
+    keys[i], keys[i + step] = keys[i + step], keys[i]
+    return keys
+
+
+def switch(on, on_change):
+    """A checkbox standing for a setting's name to its left."""
+    cb = QCheckBox()
+    cb.setCursor(Qt.PointingHandCursor)
+    cb.setChecked(on)
+    cb.toggled.connect(on_change)
+    return cb
 
 
 class SettingsPage(QWidget):
     maps_changed = Signal()  # a map pack was installed, or the maps folder looked at again
 
-    def __init__(self, prefs, sections, store=None):
+    def __init__(self, prefs, sections, layouts=()):
         """sections: [(page key, title, [(chart key, chart title)])], the pages whose charts Display sets;
-        store: the replays, whose entrants tell the player's name"""
+        layouts: [(page key, title, [(panel key, its
+        name)], {side: its name})], the pages whose layout Display sets (prefs.LAYOUTS)"""
         super().__init__()
         self.prefs = prefs
-        self.store = store
         self.dirty = True
         self.lists = {}
+        self.layout_specs = layouts
         self.titles = {}
+        self.layouts = {}  # page key -> (side select, charts select, layout of the panels' rows, {panel key: name})
+        self.layout_shown = {}  # page key -> its panels in the order their rows are in
 
         h = QHBoxLayout(self)
         h.setContentsMargins(0, 0, 0, 0)
@@ -51,171 +147,145 @@ class SettingsPage(QWidget):
         self.stack = QStackedWidget()
         h.addWidget(self.stack, 1)
 
-        pages = [("Display", "Charts and units", self.build_display(sections)),
+        pages = [("Display", "Charts, layouts and units", self.build_display(sections)),
                  ("Network", "Where the game's traffic is read", self.build_network()),
                  ("Recording", "Online races", self.build_recording()),
-                 ("Plugins", "", self.build_plugins())]
+                 ("Plugins", "", self.build_plugins()),
+                 ("Account", "", self.build_account())]
         for title, details, page in pages:
             self.nav.add_row(title, details)
             self.stack.addWidget(scroll(page))
-        self.plugins_row = len(pages) - 1
+        self.plugins_row = len(pages) - 2
+        self.account_row = len(pages) - 1
         self.update_plugins_row()
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
         prefs.changed.connect(self.fill)
-        prefs.changed.connect(lambda key: key == "options" and self.update_guess())  # the game named you
+        self.update_account()
+        prefs.changed.connect(lambda key: key == "options" and self.update_account())  # the game named you
+        prefs.changed.connect(lambda key: key == "options" and self.fill_layouts())
 
     # ----- Display -----
 
     def build_display(self, sections):
-        body, v, _ = section_page("Display", "Choose which charts each page shows and in what order. They fill the "
-                                             "window left to right, top to bottom: up to 3 in a row, up to 8 in two "
-                                             "rows.")
+        body, v = section_page("Display", "What the pages show, and how: their charts and panels, the unit of "
+                                          "speed and the map.")
         for page, title, charts in sections:
             self.titles[page] = dict(charts)
-            p, pl = panel()
-            head = QHBoxLayout()
-            head.addWidget(label(title, "sectionTitle"))
-            head.addStretch()
             rst = Button("Reset", "restore")
             rst.setToolTip("Every chart shown, in the first order")
             rst.clicked.connect(lambda _=False, page=page: self.prefs.reset(page))
-            head.addWidget(rst)
-            pl.addLayout(head)
-            rows = QVBoxLayout()
-            rows.setSpacing(theme.GAP)
-            pl.addLayout(rows)
-            self.lists[page] = rows
-            v.addWidget(p)
+            self.lists[page] = group(v, f"{title} charts", "The charts shown and their order. They fill the window "
+                                     "left to right, top to bottom: up to 3 in a row, up to 8 in two rows.", [rst])
             self.fill(page)
-        v.addWidget(self.build_units())
-        v.addWidget(self.build_map_names())
-        v.addWidget(self.build_me())
+        for page, title, panels, sides in self.layout_specs:
+            self.build_layout(v, page, title, panels, sides)
+        self.fill_layouts()
+        self.build_units(v)
+        self.build_map(v)
         v.addStretch()
         return body
 
-    def build_units(self):
-        """The unit speeds are shown in, on every page (ui/units.py)."""
-        p, pl = panel()
-        pl.addWidget(label("Units", "sectionTitle"))
-        row = QHBoxLayout()
-        row.setSpacing(theme.GAP)
-        row.addWidget(label("Speed", "muted"))
-        self.speed_unit = Select()
-        self.speed_unit.setMinimumWidth(220)
-        for key, name in units.NAMES.items():
-            self.speed_unit.addItem(name, key)
-        self.speed_unit.setCurrentIndex(max(self.speed_unit.findData(self.prefs.option("speed_unit")), 0))
-        self.speed_unit.activated.connect(lambda _: self.prefs.set_option("speed_unit",
-                                                                          self.speed_unit.currentData()))
-        row.addWidget(self.speed_unit)
-        row.addStretch()
-        pl.addLayout(row)
-        pl.addWidget(label("Distances follow the unit of speed: metres and kilometres with km/h and m/s, feet "
-                           "and miles with mph, feet and nautical miles with knots and Mach. Mach is to the speed "
-                           "of sound at sea level, 1225 km/h.", "muted", wrap=True))
-        return p
+    def build_layout(self, v, page, title, panels, sides):
+        """Where a page's column of panels is, which are on and their order in it, and the order of its charts
+        (prefs.LAYOUTS)."""
+        rst = Button("Reset", "restore")
+        rst.setToolTip("As the page first was")
+        rst.clicked.connect(lambda: self.prefs.set_layout(page))
+        rows = group(v, f"{title} layout", None, [rst])
+        side = select(sides.items(), None, lambda key: self.prefs.set_layout(page, side=key))
+        setting(rows, "Panels' column", "The side of the page the panels are on.", side)
+        chart_order = select([(False, "Map, then speed"), (True, "Speed, then map")], None,
+                             lambda key: self.prefs.set_layout(page, speed_first=key))
+        setting(rows, "Charts", "The two charts, left to right.", chart_order)
+        setting(rows, "Panels", "Those shown, top to bottom in the column.")
+        box = QWidget()
+        order = QVBoxLayout(box)
+        order.setContentsMargins(0, 0, 0, 0)
+        order.setSpacing(theme.GAP)
+        rows.addWidget(box)
+        self.layouts[page] = (side, chart_order, order, dict(panels))
 
-    def build_map_names(self):
+    def fill_layouts(self):
+        """The layout groups as the layouts are now: the lists' choices, and the panels' rows in their order."""
+        for page, (side, chart_order, order, names) in self.layouts.items():
+            lay = self.prefs.layout(page)
+            side.setCurrentIndex(max(side.findData(lay["side"]), 0))
+            chart_order.setCurrentIndex(max(chart_order.findData(lay["speed_first"]), 0))
+            if self.layout_shown.get(page) == (lay["panels"], lay["off"]):
+                continue
+            self.layout_shown[page] = (lay["panels"], lay["off"])
+            while order.count():
+                order.takeAt(0).widget().deleteLater()
+            keys = lay["panels"]
+            for i, key in enumerate(keys):
+                w = QWidget()
+                h = QHBoxLayout(w)
+                h.setContentsMargins(0, 0, 0, 0)
+                h.setSpacing(theme.GAP)
+                cb = QCheckBox(names[key])
+                cb.setCursor(Qt.PointingHandCursor)
+                cb.setChecked(key not in lay["off"])
+                cb.toggled.connect(lambda on, page=page, key=key: self.prefs.set_layout(
+                    page, off=[k for k in self.prefs.layout(page)["off"] if k != key] + ([] if on else [key])))
+                h.addWidget(cb, 1)
+                for step, name, icon in ((-1, "Move up", "chevron-up"), (1, "Move down", "chevron-down")):
+                    b = Button(name, icon, icon_only=True)
+                    b.setEnabled(0 <= i + step < len(keys))
+                    b.clicked.connect(lambda _=False, page=page, keys=keys, i=i, step=step:
+                                      self.prefs.set_layout(page, panels=moved(keys, i, step)))
+                    h.addWidget(b)
+                order.addWidget(w)
+
+    def build_units(self, v):
+        """The unit speeds are shown in, on every page (ui/units.py)."""
+        rows = group(v, "Units")
+        self.speed_unit = select(units.NAMES.items(), self.prefs.option("speed_unit"),
+                                 lambda key: self.prefs.set_option("speed_unit", key))
+        setting(rows, "Speed", "Distances follow it: metres and kilometres with km/h and m/s, feet and miles with "
+                               "mph, feet and nautical miles with knots and Mach. Mach is to the speed of sound at "
+                               "sea level, 1225 km/h.", self.speed_unit)
+
+    def build_map(self, v):
         """How racers are named over their markers on the map (widgets.map_name), and whether their trails are
         drawn."""
-        p, pl = panel()
-        pl.addWidget(label("Map", "sectionTitle"))
-        row = QHBoxLayout()
-        row.setSpacing(theme.GAP)
-        row.addWidget(label("Racers' names", "muted"))
-        self.map_names = Select()
-        self.map_names.setMinimumWidth(220)
-        for key, name in MAP_NAMES.items():
-            self.map_names.addItem(name, key)
-        self.map_names.setCurrentIndex(max(self.map_names.findData(self.prefs.option("map_names")), 0))
-        self.map_names.activated.connect(lambda _: self.prefs.set_option("map_names", self.map_names.currentData()))
-        row.addWidget(self.map_names)
-        row.addStretch()
-        pl.addLayout(row)
-        pl.addWidget(label("Over each car's marker on the map of a replay. Three letters: the first three of the "
-                           "name in capitals, as the game shows them in a race.", "muted", wrap=True))
-        self.map_trails = QCheckBox("Trails behind the cars")
-        self.map_trails.setChecked(self.prefs.option("map_trails"))
-        self.map_trails.toggled.connect(lambda on: self.prefs.set_option("map_trails", on))
-        pl.addWidget(self.map_trails)
-        pl.addWidget(label("Each car's last minute, drawn behind its marker on the Multiplayer and Replays maps. "
-                           "Off, the maps show the markers alone.", "muted", wrap=True))
-        return p
+        rows = group(v, "Map")
+        self.map_names = select(MAP_NAMES.items(), self.prefs.option("map_names"),
+                                lambda key: self.prefs.set_option("map_names", key))
+        setting(rows, "Racers' names", "Over each car's marker on the map of a replay. Three letters: the first "
+                                       "three of the name in capitals, as the game shows them in a race.",
+                self.map_names)
+        self.map_trails = switch(self.prefs.option("map_trails"), lambda on: self.prefs.set_option("map_trails", on))
+        setting(rows, "Trails behind the cars", "Each car's last minute, drawn behind its marker on the Multiplayer "
+                                                "and Replays maps. Off, the maps show the markers alone.",
+                self.map_trails)
 
-    def build_me(self):
-        """The player's name in the game: the race server lists every entrant by name, and this is how the
-        Multiplayer and Replays pages tell which one is the player."""
-        p, pl = panel()
-        pl.addWidget(label("You", "sectionTitle"))
-        row = QHBoxLayout()
-        row.setSpacing(theme.GAP)
-        row.addWidget(label("Your name in the game", "muted"))
-        self.my_name = QLineEdit(self.prefs.option("my_name"))
-        self.my_name.setMinimumWidth(220)
-        self.my_name.setPlaceholderText("as other players see it")
-        self.my_name.editingFinished.connect(lambda: self.prefs.set_option("my_name", self.my_name.text().strip()))
-        row.addWidget(self.my_name)
-        self.guess_btn = Button("Use", "check-black")
-        self.guess_btn.clicked.connect(self.use_guess)
-        row.addWidget(self.guess_btn)
-        row.addStretch()
-        pl.addLayout(row)
-        self.guess_text = label("", "muted", wrap=True)
-        pl.addWidget(self.guess_text)
-        self.found_text = label("", "muted", wrap=True)
-        pl.addWidget(self.found_text)
-        pl.addWidget(label("It marks you as YOU among a race's racers on the Multiplayer and Replays pages, and "
-                           "tells your own car from the others'. The game sends it, with your account ID, when "
-                           "you connect: the app fills it in itself.", "muted", wrap=True))
-        self.update_guess()
-        return p
+    # ----- Account -----
 
-    def guess_name(self):
-        """The name that is among the entrants of every recent race that has them: the player's own."""
-        if self.store is None:
-            return None
-        lists = []
-        for path, _ in self.store.list()[:12]:
-            try:
-                field = self.store.load(path).get("field")
-            except (OSError, ValueError, EOFError):
-                continue
-            if field:
-                lists.append({e["name"] for e in field if not e.get("bot")})
-        if len(lists) < 2:
-            return None
-        common = set.intersection(*lists)
-        return next(iter(common)) if len(common) == 1 else None
+    def build_account(self):
+        """The player as the game knows them: the race server lists every entrant by name, and this is how the
+        Multiplayer and Replays pages tell which one is the player. Not set by hand: the game sends both, with the
+        account ID, when it connects (capture/roster.py), and the main window keeps them (on_player)."""
+        body, v = section_page("Account", "Who you are in the game. The app reads it from the game's own traffic "
+                                          "when the game connects to its server: there is nothing to set.")
+        rows = group(v, "In the game")
+        self.my_name = value_label()
+        setting(rows, "Name", "It marks you as YOU among a race's racers on the Multiplayer and Replays pages, and "
+                              "tells your own car from the others'.", self.my_name)
+        self.my_id = value_label()
+        setting(rows, "Account ID", "", self.my_id)
+        self.account_note = label("Not found yet: start the game, or join a race, with the app capturing.", "muted",
+                                  wrap=True)
+        rows.addWidget(self.account_note)
+        v.addStretch()
+        return body
 
-    def update_found(self):
-        """The name and account id found in the game's traffic, when they were."""
-        acc = self.prefs.option("my_id")
-        self.found_text.setVisible(bool(acc))
-        if acc:
-            self.found_text.setText(f'Found in the game: "{self.prefs.option("my_name")}", account ID {acc}.')
-        if self.my_name.text() != self.prefs.option("my_name") and not self.my_name.hasFocus():
-            self.my_name.setText(self.prefs.option("my_name"))
-
-    def update_guess(self):
-        self.update_found()
-        if self.prefs.option("my_id"):  # known from the game: no guessing
-            self.guess = None
-            self.guess_btn.hide()
-            self.guess_text.hide()
-            return
-        g = self.guess_name()
-        self.guess = g if g and g != self.prefs.option("my_name") else None
-        self.guess_btn.setVisible(bool(self.guess))
-        self.guess_text.setVisible(bool(self.guess))
-        if self.guess:
-            self.guess_text.setText(f'"{self.guess}" is in every one of your recent races: that is likely you.')
-
-    def use_guess(self):
-        if self.guess:
-            self.my_name.setText(self.guess)
-            self.prefs.set_option("my_name", self.guess)
-            self.update_guess()
+    def update_account(self):
+        name, acc = self.prefs.option("my_name"), self.prefs.option("my_id")
+        self.my_name.setText(name or "—")
+        self.my_id.setText(acc or "—")
+        self.account_note.setVisible(not name)
+        self.nav.set_details(self.account_row, name or "Not found yet")
 
     def fill(self, page):
         if page not in self.lists:  # an option, not a page's charts
@@ -230,6 +300,7 @@ class SettingsPage(QWidget):
             h.setContentsMargins(0, 0, 0, 0)
             h.setSpacing(theme.GAP)
             cb = QCheckBox(self.titles[page][key])
+            cb.setCursor(Qt.PointingHandCursor)
             cb.setChecked(on)
             cb.toggled.connect(lambda on, key=key: self.prefs.set_visible(page, key, on))
             h.addWidget(cb, 1)
@@ -241,53 +312,45 @@ class SettingsPage(QWidget):
             dn.clicked.connect(lambda _=False, i=i: self.prefs.move(page, i, 1))
             h.addWidget(up)
             h.addWidget(dn)
+            if i:
+                lay.addWidget(divider())
             lay.addWidget(w)
 
     # ----- Network -----
 
     def build_network(self):
-        body, v, pl = section_page("Network", "The network interface that carries the game's traffic. The one with "
-                                              "the internet connection is first, and it is the right one unless a "
-                                              "VPN or a second network card is in use.")
-        row = QHBoxLayout()
-        row.setSpacing(theme.GAP)
-        row.addWidget(label("Interface", "muted"))
-        self.network = Select()
-        self.network.setMinimumWidth(220)
+        body, v = section_page("Network", "Where the app reads the game's traffic from.")
+        rows = group(v, "Capture")
         ips = local_ips()  # the default-route one first
         saved = self.prefs.option("network")
-        for ip in ips + ([saved] if saved and saved not in ips else []):
-            self.network.addItem(ip if ip in ips else f"{ip} (not connected)", ip)
-        self.network.setCurrentIndex(max(self.network.findData(saved), 0) if saved else 0)
-        self.network.activated.connect(lambda _: self.prefs.set_option("network", self.network.currentData()))
-        row.addWidget(self.network)
-        row.addStretch()
-        pl.addLayout(row)
+        items = [(ip, ip if ip in ips else f"{ip} (not connected)") for ip in ips + ([saved] if saved and saved not in ips else [])]
+        self.network = select(items, saved or (ips[0] if ips else None),
+                              lambda ip: self.prefs.set_option("network", ip))
+        setting(rows, "Network interface", "The one that carries the game's traffic. The one with the internet "
+                                           "connection is first, and it is the right one unless a VPN or a second "
+                                           "network card is in use.", self.network)
         v.addStretch()
         return body
 
     # ----- Recording -----
 
     def build_recording(self):
-        body, v, pl = section_page("Recording", "A race is recorded from when the other racers' data starts coming "
-                                                "in until it stops, and can then be watched on the Replays page. A replay keeps "
-                                                "each racer's car and in-game name, as the race server sends them.")
-        self.auto_record = QCheckBox("Record online races automatically")
-        self.auto_record.setChecked(self.prefs.option("auto_record"))
-        self.auto_record.toggled.connect(lambda on: self.prefs.set_option("auto_record", on))
-        pl.addWidget(self.auto_record)
+        body, v = section_page("Recording", "A race is recorded from when the other racers' data starts coming in "
+                                            "until it stops, and can then be watched on the Replays page. A replay "
+                                            "keeps each racer's car and in-game name, as the race server sends them.")
+        rows = group(v, "Replays")
+        self.auto_record = switch(self.prefs.option("auto_record"),
+                                  lambda on: self.prefs.set_option("auto_record", on))
+        setting(rows, "Record online races automatically", "Off, no replays are made.", self.auto_record)
 
-        p, rl = panel()
-        rl.addWidget(label("Raw traffic", "sectionTitle"))
-        self.raw_traffic = QCheckBox("Also save the raw network traffic of each recorded race")
-        self.raw_traffic.setChecked(self.prefs.option("raw_traffic"))
-        self.raw_traffic.toggled.connect(lambda on: self.prefs.set_option("raw_traffic", on))
-        rl.addWidget(self.raw_traffic)
-        rl.addWidget(label("Every packet the capture sees while a race is recorded, and in the 30 seconds before "
-                           "it (kept in memory only, until a race starts), is saved next to its replay, as a "
-                           ".pcap.gz file that Wireshark opens, for working out more of what the game sends. "
-                           "Replays that have it say \"raw traffic\" in the list; deleting a replay deletes it too.",
-                           "muted", wrap=True))
+        rows = group(v, "Raw traffic")
+        self.raw_traffic = switch(self.prefs.option("raw_traffic"),
+                                  lambda on: self.prefs.set_option("raw_traffic", on))
+        left = setting(rows, "Save the raw network traffic of each recorded race",
+                       "Every packet the capture sees while a race is recorded, and in the 30 seconds before it "
+                       "(kept in memory only, until a race starts), is saved next to its replay, as a .pcap.gz file "
+                       "that Wireshark opens, for working out more of what the game sends. Replays that have it say "
+                       "\"raw traffic\" in the list; deleting a replay deletes it too.", self.raw_traffic)
         warn = label(f'<span style="color:{theme.DANGER}">Be careful with these files.</span> They are not just '
                      "the game's traffic but everything this computer's network connection carried during the "
                      "race: other apps, the browser, chats, downloads. Whatever of it went unencrypted is in "
@@ -295,8 +358,7 @@ class SettingsPage(QWidget):
                      "these files, or replay folders that hold them, with anyone you wouldn't show that to.",
                      "muted", wrap=True)
         warn.setTextFormat(Qt.RichText)
-        rl.addWidget(warn)
-        v.addWidget(p)
+        left.addWidget(warn)
         # only races that are recorded get their traffic saved
         self.raw_traffic.setEnabled(self.auto_record.isChecked())
         self.auto_record.toggled.connect(self.raw_traffic.setEnabled)
@@ -306,29 +368,19 @@ class SettingsPage(QWidget):
     # ----- Plugins: map packs -----
 
     def build_plugins(self):
-        body, v, pl = section_page("Plugins", "Map packs (.ntemap) put the game's map under the tracks on the Live, "
-                                              "Multiplayer and Replays pages. Each says which game world it is the "
-                                              "map of, and the one of the world you are in is shown.",
-                                   f"They are kept in {world_map.maps_dir()}.")
-        btns = QHBoxLayout()
-        btns.setSpacing(theme.GAP)
-        add = Button("Install map pack", "folder")
+        body, v = section_page("Plugins", "Map packs (.ntemap) put the game's map under the tracks on the Live, "
+                                          "Multiplayer and Replays pages. Each says which game world it is the map "
+                                          "of, and the one of the world you are in is shown.")
+        add = Button("Install", "folder")
         add.setToolTip("Copy a .ntemap file into the maps folder")
         add.clicked.connect(self.install_map)
-        btns.addWidget(add)
         folder = Button("Open folder", "folder")
         folder.setToolTip("Show the maps folder in Explorer")
         folder.clicked.connect(lambda: os.startfile(world_map.maps_dir()))
-        btns.addWidget(folder)
         again = Button("Rescan", "restore")
         again.setToolTip("Look at the maps folder again, after adding or removing packs by hand")
         again.clicked.connect(self.rescan_maps)
-        btns.addWidget(again)
-        btns.addStretch()
-        pl.addLayout(btns)
-        self.map_rows = QVBoxLayout()
-        self.map_rows.setSpacing(theme.GAP)
-        v.addLayout(self.map_rows)
+        self.map_rows = group(v, "Map packs", f"Kept in {world_map.maps_dir()}.", [add, folder, again])
         v.addStretch()
         self.fill_maps()
         return body
@@ -338,18 +390,11 @@ class SettingsPage(QWidget):
             self.map_rows.takeAt(0).widget().deleteLater()
         maps = world_map.all_maps()
         if not maps:
-            p, pl = panel()
-            pl.addWidget(label("No map packs installed.", "muted"))
-            self.map_rows.addWidget(p)
+            self.map_rows.addWidget(label("No map packs installed.", "muted"))
         for m in maps:
-            p, pl = panel()
-            pl.setSpacing(2)
-            pl.addWidget(label(m.name, "listTitle"))
             world = ", ".join(w.rsplit("/", 1)[-1] for w in m.worlds) or "none given: told by its roads"
             size = os.path.getsize(m.pack.path) / 1e6 if os.path.isfile(m.pack.path) else None
-            details = f"World: {world}   ·   {m.file}" + (f"   ·   {size:.0f} MB" if size else "")
-            pl.addWidget(label(details, "muted"))
-            self.map_rows.addWidget(p)
+            setting(self.map_rows, m.name, f"World: {world}   ·   {m.file}" + (f"   ·   {size:.0f} MB" if size else ""))
 
     def update_plugins_row(self):
         n = len(world_map.all_maps())
@@ -367,10 +412,10 @@ class SettingsPage(QWidget):
         try:
             m = world_map.install(path)
         except OSError as e:
-            QMessageBox.warning(self, "Install map pack", f"Could not copy the map pack: {e}")
+            notice(self, "Install map pack", f"Could not copy the map pack: {e}")
             m = False
         if m is None:
-            QMessageBox.warning(self, "Install map pack", f"{os.path.basename(path)} is not a map pack.")
+            notice(self, "Install map pack", f"{os.path.basename(path)} is not a map pack.")
         self.maps_updated()
 
     def rescan_maps(self):

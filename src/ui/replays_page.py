@@ -12,15 +12,17 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QMessageBox, QSizePolicy, QSlider, QVBoxLayout,
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QSizePolicy, QSlider, QVBoxLayout,
                                QWidget)
 
 from capture import checkpoints, progress
 from replays.store import own_track
 from ui import charts, sectors, theme, units
 from ui.multiplayer_page import WINDOW, driver_rows, rival_color, segments
+from ui.prefs import LAYOUTS
 from ui.tracks import track_name
-from ui.widgets import Button, DriversPanel, RowList, SectorsPanel, card, label, map_name, panel, set_text, shown_name
+from ui.widgets import (Button, DriversPanel, RowList, SectorsPanel, arrange, card, column, confirm, label, map_name,
+                        panel, set_text, shown_name)
 from ui.world_map import MapPicker, all_maps
 
 STEPS = 10  # timeline positions per second
@@ -108,6 +110,9 @@ class CarChip(QFrame):
 
 
 class ReplaysPage(QWidget):
+    PANELS = [("result", "Result"), ("sectors", "Sectors"), ("racers", "Racers")]  # the column's, as Settings names them
+    SIDES = {"right": "Right, the races on the left", "left": "Left, the races on the right"}  # where the column can be
+
     def __init__(self, store):
         super().__init__()
         self.store = store
@@ -121,9 +126,9 @@ class ReplaysPage(QWidget):
         self.playing.timeout.connect(self.step)
         self.held = False  # playing, but held while the slider is dragged
 
-        h = QHBoxLayout(self)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(theme.GAP)
+        self.page_row = QHBoxLayout(self)
+        self.page_row.setContentsMargins(0, 0, 0, 0)
+        self.page_row.setSpacing(theme.GAP)
 
         lp, ll = panel()
         lp.setFixedWidth(300)
@@ -144,11 +149,14 @@ class ReplaysPage(QWidget):
         self.del_btn.clicked.connect(self.delete)
         btns.addWidget(self.del_btn, 1)
         ll.addLayout(btns)
-        h.addWidget(lp)
+        self.list_panel = lp
 
-        right = QVBoxLayout()
+        # in the middle: the charts, the cars' speeds and the timeline
+        self.middle = QWidget()
+        right = QVBoxLayout(self.middle)
+        right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(theme.GAP)
-        row = QHBoxLayout()
+        self.chart_row = row = QHBoxLayout()
         row.setSpacing(theme.GAP)
         self.c_map = charts.MapChart(interactive=True)
         self.maps = MapPicker(all_maps())  # the game map under the tracks, see draw
@@ -161,8 +169,6 @@ class ReplaysPage(QWidget):
         self.c_speed.addItem(self.cursor, ignoreBounds=True)
         self.map_card = card("Map", self.c_map)
         self.speed_card = card("Speed", self.c_speed)
-        row.addWidget(self.map_card, 1)
-        row.addWidget(self.speed_card, 1)
         right.addLayout(row, 1)
 
         self.pool = []   # every CarChip made so far, in the row's order
@@ -209,12 +215,11 @@ class ReplaysPage(QWidget):
         self.time.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         tl.addWidget(self.time)
         right.addWidget(tp)
-        h.addLayout(right, 1)
 
-        # on the right: the open race's result, everyone's time at the finish (replays from 2026-11-10 on), and the
+        # a column of panels (on the right at first, the list of races on the other side, see set_layout): the open
+        # race's result, everyone's time at the finish (replays from 2026-11-10 on), and the
         # sectors at the timeline's position, timed from the recorded positions (see time_sectors)
-        side = QVBoxLayout()
-        side.setSpacing(theme.GAP)
+        self.column, side = column(self)
         self.result_panel, rl = panel()
         self.result_panel.setFixedWidth(300)
         self.result_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
@@ -227,23 +232,44 @@ class ReplaysPage(QWidget):
         self.final_places = {}  # car name -> the place it finished in, as the result has it
         rl.addLayout(self.result_grid)
         self.result_panel.hide()
-        side.addWidget(self.result_panel)
         self.sectors = SectorsPanel()
         self.sectors.hide()
-        side.addWidget(self.sectors)
         # and everyone in detail, as on the Multiplayer page: from the entrants, the lobby, the player's rank and the
         # number plates the replay kept
         self.drivers = DriversPanel()
         self.drivers.hide()
-        side.addWidget(self.drivers)
-        side.addStretch()
+        self.panels = {"result": self.result_panel, "sectors": self.sectors, "racers": self.drivers}
+        self.has = set()  # keys of the panels the open replay has something for
         self.own_rank = None  # the player's (rank row, points) before the open race, when the replay has them
         self.plates = {}  # entrant's name -> number plate, of the open race
         self.sector_times = []  # [t] of the open replay's sector tables, each the table from then on
         self.sector_tables = []  # their tables (sectors.Timer.table)
         self.sector_minis = 0  # its mini-sectors to a lap
-        h.addLayout(side)
+        self.layout_now = None
+        self.set_layout(LAYOUTS["replays"])
         self.refresh()
+
+    def set_layout(self, layout):
+        """Which side the column of panels is on (the list of races on the other), which are on and their order in
+        it, and the order of the charts (prefs.LAYOUTS)."""
+        if layout == self.layout_now:
+            return
+        self.layout_now = layout
+        arrange(self.column.layout(), [self.panels[k] for k in layout["panels"]], top=True)
+        charts_ = [self.speed_card, self.map_card] if layout["speed_first"] else [self.map_card, self.speed_card]
+        arrange(self.chart_row, charts_, stretch=charts_)
+        sides = [self.list_panel, self.column]
+        arrange(self.page_row, [sides[layout["side"] == "left"], self.middle, sides[layout["side"] == "right"]],
+                stretch=[self.middle])
+        # shown or hidden once in their places (see widgets.column)
+        for k in self.panels:
+            self.show_panel(k, k in self.has)
+        self.column.setVisible(len(layout["off"]) < len(layout["panels"]))  # no gap for an empty column
+
+    def show_panel(self, key, has):
+        """A panel of the column shown when the open replay has something for it, unless turned off in Settings."""
+        (self.has.add if has else self.has.discard)(key)
+        self.panels[key].setVisible(has and key not in self.layout_now["off"])
 
     # ----- the list -----
 
@@ -396,7 +422,7 @@ class ReplaysPage(QWidget):
         """Each car's sectors at the timeline's position: by the place it finished in (as the result has it), those
         without one after, in the order of their names."""
         if not self.sector_tables:
-            self.sectors.hide()
+            self.show_panel("sectors", False)
             return
         k = bisect.bisect_right(self.sector_times, self.pos) - 1
         table = self.sector_tables[k] if k >= 0 else {}
@@ -413,7 +439,7 @@ class ReplaysPage(QWidget):
                              sectors=t["sectors"] if t else [None] * sectors.SECTORS,
                              minis=t["minis"] if t else [None] * self.sector_minis))
         self.sectors.set_rows(rows)
-        self.sectors.show()
+        self.show_panel("sectors", True)
 
     def read_progress(self, progress, names):
         """The replay's racers along the track, each given the car it was (see self.progress)."""
@@ -507,7 +533,7 @@ class ReplaysPage(QWidget):
         for k, cells in enumerate(self.result_rows):
             for w in cells:
                 w.setVisible(k < len(rows))
-        self.result_panel.setVisible(bool(self.results))
+        self.show_panel("result", bool(self.results))
 
     def set_me(self, name):
         self.me = name or ""
@@ -523,14 +549,14 @@ class ReplaysPage(QWidget):
         """The open race's entrants in detail, as on the Multiplayer page; a car hidden is left out here too. None for
         a replay without its entrants (before 2026-11-04)."""
         if not self.field:
-            self.drivers.hide()
+            self.show_panel("racers", False)
             return
         me = self.driver()
         car_of = lambda name: "You" if me and name == me else name  # an entrant's car, as in self.cars
         colors = {e["name"]: c for e in self.field for n, c, _ in self.cars if n == car_of(e["name"])}
         shown = [e for e in self.field if car_of(e["name"]) not in self.hidden]
         self.drivers.set_racers(driver_rows(shown, me, self.lobby, self.own_rank, self.plates, colors))
-        self.drivers.show()
+        self.show_panel("racers", True)
 
     def label(self, name):
         """The name of the car under name as written on its chip."""
@@ -566,8 +592,8 @@ class ReplaysPage(QWidget):
 
     def delete(self):
         it = self.list.currentItem()
-        if it and QMessageBox.question(self, "Delete replay", f"Delete the race of {it.data(Qt.UserRole + 1)}?") \
-                == QMessageBox.Yes:
+        if it and confirm(self, "Delete replay", f"Delete the race of {it.data(Qt.UserRole + 1)}?", "Delete", "trash",
+                          danger=True):
             self.store.delete(it.data(Qt.UserRole))
             self.refresh()
 

@@ -142,10 +142,13 @@ QRadioButton::indicator:checked {{
 }}
 
 QLineEdit {{
-    font-size: {FS_LG}px; background: transparent; border: 2px solid transparent; border-radius: {RADIUS}px; padding: 2px 6px;
+    min-height: {CONTROL_HEIGHT - 4}px; max-height: {CONTROL_HEIGHT - 4}px; padding: 0 10px;
+    font-size: {FS_MD}px; background: rgba(0, 0, 0, 128); border: 2px solid {ACCENT}; border-radius: {RADIUS}px;
+    selection-background-color: {ACCENT}; selection-color: #000;
 }}
-QLineEdit:hover {{ border-color: rgba(251, 207, 77, 90); }}
-QLineEdit:focus {{ border-color: {ACCENT}; background: rgba(0, 0, 0, 128); }}
+QLineEdit:hover {{ background: {ACCENT_DARK}; }}
+QLineEdit:focus {{ border-color: {ACCENT_HOVER}; background: {MENU_BG}; }}
+*[role="divider"] {{ background: rgba(255, 255, 255, 20); }}
 
 QTableWidget {{ background: transparent; border: none; font-size: {FS_LG}px; outline: none; }}
 QTableWidget::item {{ padding-right: {GAP}px; border: none; }}
@@ -176,6 +179,7 @@ QSlider::handle:horizontal {{ width: 16px; height: 16px; margin: -5px 0; backgro
 QSlider::handle:horizontal:hover {{ background: {ACCENT_HOVER}; }}
 QSlider::groove:horizontal:disabled, QSlider::sub-page:horizontal:disabled {{ background: rgba(255, 255, 255, 20); }}
 
-QMessageBox {{ background: {MENU_BG}; }}
-QMessageBox QLabel {{ font-size: {FS_MD}px; }}
+*[role="dialog"] {{ background: {MENU_BG}; border: 2px solid {ACCENT}; border-radius: {RADIUS}px; }}
+*[role="dialog"][danger="true"] {{ border-color: {DANGER}; }}
+*[role="dialog"] QLabel {{ background: transparent; border: none; }}
 """

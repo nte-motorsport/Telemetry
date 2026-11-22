@@ -3,9 +3,9 @@ import html
 import itertools
 import math
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListView,
+from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QSizePolicy, QHBoxLayout, QLabel, QListView,
                                QListWidget, QListWidgetItem, QPushButton, QScrollArea, QStyledItemDelegate,
                                QVBoxLayout, QWidget)
 
@@ -255,6 +255,7 @@ class TimingPanel(QFrame):
         self.grid.setVerticalSpacing(4)
         self.grid.setColumnStretch(1, 1)
         v.addLayout(self.grid)
+        v.addStretch()  # the rows at the top of a panel made taller than they are (the last of a column, arrange)
         self.rows = []  # (place, name, interval) labels, one row per entrant
         self.me = ""
         self.entrants = []
@@ -360,6 +361,7 @@ class DriversPanel(QFrame):
         self.list = QVBoxLayout()
         self.list.setSpacing(theme.GAP)
         v.addLayout(self.list)
+        v.addStretch()  # the entries at the top of a panel made taller than they are (the last of a column, arrange)
         self.shown = None  # what the entries say, to write them anew only when it changes
         self.logos = {}  # (logo file, opacity) -> its pixmap, scaled
         self.rows = []  # [box, icon, [head, car, rank labels], its logo's pixmap] made so far: kept and written over, not made anew,
@@ -572,6 +574,31 @@ def map_name(name, bot, mode):
     return shown_name(name, bot)
 
 
+def arrange(lay, widgets, stretch=(), fill=False, top=False):
+    """Lay widgets out in box layout lay in this order, instead of what it held (widgets and stretches only).
+    stretch: those that take the room left. fill: a column of panels whose last one goes down to the bottom, the
+    rest as tall as they need. top: a column whose panels are at the top, the room left under them."""
+    while lay.count():
+        lay.takeAt(0)
+    for k, w in enumerate(widgets):
+        grow = any(w is x for x in stretch) or (fill and k == len(widgets) - 1)  # (fill: those shown only)
+        if fill:
+            w.setSizePolicy(w.sizePolicy().horizontalPolicy(), QSizePolicy.Expanding if grow else QSizePolicy.Maximum)
+        lay.addWidget(w, 1 if grow else 0)
+    if top:
+        lay.addStretch()
+
+
+def column(page):
+    """A column of panels a GAP apart, in a widget of its own on page, to be moved about whole (arrange). (On the page
+    from the start: a widget with no parent shown, or one in it, would be a window of its own for a moment.)"""
+    w = QWidget(page)
+    v = QVBoxLayout(w)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(theme.GAP)
+    return w, v
+
+
 def scroll(widget):
     s = QScrollArea()
     s.setWidgetResizable(True)
@@ -580,6 +607,102 @@ def scroll(widget):
     s.setWidget(widget)
     widget.setAttribute(Qt.WA_TranslucentBackground)
     return s
+
+
+class Dialog(QDialog):
+    """A message box in the app's look instead of Windows' own: frameless, the menus' background with an accent
+    border (red for a danger), a title, the text and the buttons on the right; centred over the main window."""
+
+    def __init__(self, parent, title, text, buttons, danger=False):
+        """buttons: (text, icon name, accepts, primary) from left to right."""
+        super().__init__(parent.window() if parent else None)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowTitle(title)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        box = QFrame()
+        box.setProperty("role", "dialog")
+        box.setProperty("danger", danger)
+        outer.addWidget(box)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(theme.GAP * 2, theme.GAP * 2, theme.GAP * 2, theme.GAP * 2)
+        lay.setSpacing(theme.GAP)
+        lay.addWidget(label(title, "sectionTitle"))
+        msg = label(text, wrap=True)
+        msg.setMinimumWidth(320)
+        msg.setMaximumWidth(480)
+        lay.addWidget(msg)
+        lay.addSpacing(theme.GAP)
+        row = QHBoxLayout()
+        row.setSpacing(theme.GAP)
+        row.addStretch(1)
+        for text_, icon_name, accepts, primary in buttons:
+            b = Button(text_, icon_name)
+            if danger and accepts:
+                b.set_flag("danger", True)
+            elif primary:
+                b.set_flag("primary", True)
+            b.clicked.connect(self.accept if accepts else self.reject)
+            row.addWidget(b)
+            if primary:
+                b.setDefault(True)
+                b.setFocus()
+        lay.addLayout(row)
+
+        self.shade = Shade(self.parent()) if self.parent() else None
+
+    def showEvent(self, ev):
+        if self.shade:
+            self.shade.cover()
+        super().showEvent(ev)
+        if self.parent():
+            self.move(self.parent().geometry().center() - self.rect().center())
+
+    def hideEvent(self, ev):
+        if self.shade:
+            self.shade.hide()
+        super().hideEvent(ev)
+
+    def done(self, result):
+        super().done(result)
+        if self.shade:
+            self.shade.deleteLater()
+            self.shade = None
+
+
+class Shade(QWidget):
+    """The window darkened by half under an open Dialog, following it as it is resized."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
+        window.installEventFilter(self)
+
+    def cover(self):
+        self.setGeometry(self.parent().rect())
+        self.raise_()
+        self.show()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize and self.isVisible():
+            self.setGeometry(self.parent().rect())
+        return False
+
+    def paintEvent(self, ev):
+        QPainter(self).fillRect(self.rect(), QColor(0, 0, 0, 160))
+
+
+def confirm(parent, title, text, ok="OK", ok_icon=None, danger=False):
+    """Ask before doing something: True if it was confirmed (Cancel and Esc say no)."""
+    return Dialog(parent, title, text, [("Cancel", None, False, not danger), (ok, ok_icon, True, danger)],
+                  danger).exec() == QDialog.Accepted
+
+
+def notice(parent, title, text):
+    """Tell something that went wrong; one OK button."""
+    Dialog(parent, title, text, [("OK", None, True, True)]).exec()
 
 
 class Backdrop(QWidget):
