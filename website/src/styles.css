@@ -1,0 +1,452 @@
+@font-face {
+  font-family: 'Momo Trust Display';
+  src: url('/assets/fonts/MomoTrustDisplay-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* Design tokens — the same as the main site, Rivals and the Wiki; the accent is the
+   app's yellow (src/ui/theme.py: ACCENT, ACCENT_HOVER, ACCENT_DARK). */
+:root {
+  color-scheme: dark;
+  --panel: rgba(0, 0, 0, 0.5);
+  --text: #fff;
+  --muted: #999;
+  --accent: #fbcf4d;
+  --accent-hover: #fddb7c;
+  --accent-dark: #2a230d;
+  --grid: #2e2e2e;
+  --radius: 10px;
+  --gap: 10px;
+
+  --fs-hero: 37px;
+  --fs-lg: 16px;
+  --fs-md: 12px;
+  --fs-hero-mobile: 29px;
+  --border: 2px solid var(--accent);
+  --control-height: 38px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Momo Trust Display', 'Segoe UI', sans-serif;
+  font-size: var(--fs-md);
+  background-color: #000;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('/assets/ui/background.png');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+p {
+  margin: 0;
+  font-weight: 400;
+}
+
+/* Tabler icons draw in currentColor: yellow, like the rest of the accents. */
+.icon {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.muted-text {
+  color: var(--muted);
+  line-height: normal;
+}
+
+/* ---------- Page loading (PageGate.jsx) ---------- */
+.page-gate-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.page-gate:not(.page-gate-hidden) {
+  animation: page-reveal 0.2s ease-out;
+}
+
+@keyframes page-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Page: the lap on the left, everything else on the right ---------- */
+
+.landing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px var(--gap);
+}
+
+.showcase {
+  display: grid;
+  grid-template-areas:
+    'sim intro'
+    'sim features';
+  grid-template-rows: auto 1fr;
+  grid-template-columns: minmax(0, 640px) 320px;
+  gap: 14px;
+  width: min(100%, calc(640px + 320px + 30px));
+}
+
+.sim {
+  grid-area: sim;
+  align-self: center;
+}
+
+/* Logo, name, tagline and the download, one under the other, flush left. */
+.intro {
+  display: flex;
+  flex-direction: column;
+  grid-area: intro;
+  align-items: flex-start;
+  gap: var(--gap);
+}
+
+.hero-logo {
+  width: 80px;
+  height: auto;
+}
+
+.site-title {
+  font-size: var(--fs-hero);
+  line-height: normal;
+}
+
+.hero-text {
+  font-size: var(--fs-lg);
+}
+
+.text-link {
+  color: var(--accent);
+  transition: color 0.15s ease;
+}
+
+.text-link:hover,
+.text-link:focus-visible {
+  color: var(--text);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+  height: var(--control-height);
+  padding: 0 10px;
+  font-size: var(--fs-md);
+  line-height: normal;
+  white-space: nowrap;
+  background: #000;
+  border: var(--border);
+  border-radius: var(--radius);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn:hover {
+  background: var(--accent-dark);
+}
+
+/* The download: filled yellow with black text, like the app's primary buttons. */
+.btn-primary {
+  height: 48px;
+  padding: 0 20px;
+  font-size: var(--fs-lg);
+  color: #000;
+  background: var(--accent);
+}
+
+.btn-primary .icon {
+  color: #000;
+}
+
+.btn-primary:hover,
+.btn-primary:focus-visible {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* ---------- Download ---------- */
+
+.download {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.download .btn-primary {
+  margin-bottom: 4px;
+}
+
+/* ---------- Panels, as the app's ---------- */
+
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+}
+
+.section-title {
+  font-size: var(--fs-lg);
+  line-height: normal;
+}
+
+/* ---------- Features ---------- */
+
+.features {
+  display: flex;
+  flex-direction: column;
+  grid-area: features;
+  justify-content: flex-end;
+  gap: var(--gap);
+}
+
+/* Icon on the left, name and description beside it. */
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+}
+
+.feature-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---------- The race simulation (RaceSim.jsx) ---------- */
+
+.sim {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+/* The map and the speed chart lie on top of each other and cross-fade. */
+.sim-panel {
+  display: grid;
+  padding: var(--gap);
+}
+
+.sim-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.sim-pane-shown {
+  opacity: 1;
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+}
+
+.plot {
+  position: relative;
+  outline: 1px solid var(--grid);
+  outline-offset: -1px;
+}
+
+.plot-map {
+  width: 100%;
+  height: 100%;
+}
+
+.plot-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.plot .plot-svg {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+}
+
+.map-label {
+  font-size: 11px;
+  fill: var(--text);
+}
+
+.tick {
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+/* Under the map, in place of a time axis: a ruler and its length. */
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.scale-bar {
+  position: relative;
+  height: 1px;
+  background: var(--muted);
+}
+
+.scale-bar::before,
+.scale-bar::after {
+  position: absolute;
+  top: -4px;
+  width: 1px;
+  height: 9px;
+  content: '';
+  background: var(--muted);
+}
+
+.scale-bar::before {
+  left: 0;
+}
+
+.scale-bar::after {
+  right: 0;
+}
+
+/* The cars under the charts, as the app's chips: colour, name and speed now. */
+.chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap);
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: var(--gap);
+  background: var(--panel);
+  border-radius: var(--radius);
+}
+
+.chip-eye {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  background: #000;
+  border: 2px solid;
+  border-radius: var(--radius);
+}
+
+.chip-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Always one line: the speed changes every frame, and a wrapped unit would make the chips jump. */
+.chip-value {
+  overflow: hidden;
+  font-size: 24px;
+  line-height: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chip-unit {
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+
+/* ---------- Responsive ---------- */
+
+/* Too narrow for the column beside the lap: the intro on top, centred, then the lap, then the features. */
+@media (max-width: 1020px) {
+  .showcase {
+    grid-template-areas:
+      'intro'
+      'sim'
+      'features';
+    grid-template-rows: auto;
+    grid-template-columns: minmax(0, 640px);
+    justify-content: center;
+  }
+
+  .intro,
+  .download {
+    align-items: center;
+    text-align: center;
+  }
+
+  .hero-text,
+  .download-meta {
+    max-width: 520px;
+    text-wrap: balance;
+  }
+}
+
+@media (max-width: 780px) {
+  .site-title {
+    font-size: var(--fs-hero-mobile);
+  }
+}
+
+/* Four chips in a row need some 140px each; narrower, two rows of two. */
+@media (max-width: 680px) {
+  .chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

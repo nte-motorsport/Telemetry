@@ -1,0 +1,48 @@
+# Builds the download site in website/ and deploys it to Firebase Hosting (project
+# ntemotorsport, site ntemotorsport-telemetry) when it changes on main. Can also be run by
+# hand from the Actions tab. The site looks up the newest release itself, so a new
+# release needs no deploy.
+#
+# Needs the secret FIREBASE_SERVICE_ACCOUNT: the JSON key of a service account with the
+# "Firebase Hosting Admin" role (the same one Site, Wiki and Rivals use).
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - .github/workflows/website.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-hosting
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ntemotorsport
+          channelId: live
+          entryPoint: website

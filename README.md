@@ -63,6 +63,11 @@ Change `VERSION` in `src/version.py` (to a higher one: an installer replaces onl
 release `v<version>`, with notes made from the commits since the last one. A version that already has its release
 is not built again; to retry a failed build, run the workflow by hand from the Actions tab.
 
+## Website
+
+The download page is in [`website/`](website/README.md): Vite + React on Firebase Hosting, like the other
+NTE Motorsport sites. Its download button always points at the newest release's installer.
+
 ## Maps
 
 The game's map can lie under the tracks on the Live, Multiplayer and Replays pages. Maps are plug-ins, not part
