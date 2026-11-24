@@ -36,16 +36,6 @@ function DownloadPanel() {
         <span className="btn-label">Download for Windows</span>
       </a>
       <p className="muted-text download-meta">
-        {release ? (
-          <>
-            Version {release.version} · {formatSize(release.size)} installer
-            {release.date && <> · {formatDate(release.date)}</>}
-          </>
-        ) : (
-          'Windows installer (.msi)'
-        )}
-      </p>
-      <p className="muted-text download-meta">
         The program never interferes with the game process or its memory. It simply monitors network traffic from the sidelines.
       </p>
     </section>
